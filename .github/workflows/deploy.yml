@@ -1,0 +1,51 @@
+name: Build and Deploy to ECS
+
+on:
+  push:
+    branches:
+      - main  # Trigger the workflow on push to the main branch
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest  # Use the latest Ubuntu environment for the build
+
+    steps:
+      # Step 1: Check out the code from the repository
+      - name: Checkout Code
+        uses: actions/checkout@v2
+
+      # Step 2: Set up Docker Buildx (Docker multi-platform build)
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      # Step 3: Log in to Amazon ECR
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v1
+
+      # Step 4: Build and push Docker image to ECR
+      - name: Build and Push Docker Image
+        run: |
+          # Set variables
+          IMAGE_TAG=latest
+          ECR_REPOSITORY=testing/fast_api  # Replace with your ECR repository name
+          AWS_REGION=eu-north-1  # Replace with your AWS region
+
+          # Build the Docker image
+          docker build -t $ECR_REPOSITORY:$IMAGE_TAG .
+
+          # Tag the Docker image for ECR
+          docker tag $ECR_REPOSITORY:$IMAGE_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG
+
+          # Push the Docker image to ECR
+          docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG
+
+      # Step 5: Deploy to ECS
+      - name: Deploy to ECS
+        run: |
+          # Set variables
+          ECS_CLUSTER=your-ecs-cluster-name  # Replace with your ECS cluster name
+          ECS_SERVICE=your-ecs-service-name  # Replace with your ECS service name
+          TASK_DEFINITION=your-task-definition-name  # Replace with your ECS task definition
+
+          # Update ECS service with the new task definition
+          aws ecs update-service --cluster $ECS_CLUSTER --service $ECS_SERVICE --task-definition $TASK_DEFINITION --region $AWS_REGION
