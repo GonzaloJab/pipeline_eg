@@ -5,7 +5,6 @@ on:
     branches:
       - main  # Trigger the workflow on push to the main branch
 
-# Added by Ai recommendation      
 permissions:
   id-token: write
   contents: read
@@ -24,19 +23,17 @@ jobs:
         uses: docker/setup-buildx-action@v1
 
       # Step 3: Configure AWS credentials
-        
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4 # More information on this action can be found below in the 'AWS Credentials' section
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::354918374652:role/GITHUB_deploy
           aws-region: ${{ secrets.AWS_REGION }}
 
-
+      # Step 4: Login to Amazon ECR
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-
-
+      # Step 5: Build, Tag, and Push Docker Image to ECR
       - name: Build, Tag, and Push Docker Image to ECR
         env:
           ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
@@ -46,13 +43,22 @@ jobs:
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG  
 
-    #   # Step 5: Deploy to ECS
-    #   - name: Deploy to ECS
-    #     run: |
-    #       # Set variables
-    #       CLUSTER_NAME=your-cluster-name  # Replace with your ECS cluster name
-    #       SERVICE_NAME=your-service-name  # Replace with your ECS service name
-    #       TASK_DEFINITION=your-task-definition  # Replace with your ECS task definition
+      # Step 6: Deploy to ECS
+      - name: Deploy to ECS
+        run: |
+          # Set variables for your ECS cluster, service, and task definition
+          CLUSTER_NAME=testing  # Replace with your ECS cluster name
+          SERVICE_NAME=test_api-service-9v8glg2t  # Replace with your ECS service name
+          TASK_DEFINITION=test_api  # Replace with your ECS task definition
 
-    #       # Update ECS service to use the new image
-    #       aws ecs update-service --cluster $CLUSTER_NAME --service $SERVICE_NAME --force-new-deployment
+          # Register the new task definition with ECS
+          aws ecs register-task-definition \
+            --family $TASK_DEFINITION \
+            --container-definitions file://container-definitions.json  # JSON file with container definitions
+
+          # Update ECS service to use the new task definition and force a new deployment
+          aws ecs update-service \
+            --cluster $CLUSTER_NAME \
+            --service $SERVICE_NAME \
+            --task-definition $TASK_DEFINITION \
+            --force-new-deployment
