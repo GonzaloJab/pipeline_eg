@@ -5,6 +5,11 @@ on:
     branches:
       - main  # Trigger the workflow on push to the main branch
 
+# Added by Ai recommendation      
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest  # Use the latest Ubuntu environment for the build
@@ -23,7 +28,7 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4 # More information on this action can be found below in the 'AWS Credentials' section
         with:
-          role-to-assume: arn:aws:iam::354918374652:role/APP_Containers
+          role-to-assume: aarn:aws:iam::354918374652:role/GITHUB_deploy
           aws-region: ${{ secrets.AWS_REGION }}
   
           
