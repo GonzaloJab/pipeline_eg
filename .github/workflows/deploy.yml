@@ -30,13 +30,21 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::354918374652:role/GITHUB_deploy
           aws-region: ${{ secrets.AWS_REGION }}
-  
-          
-    #  # Step 4: Amazon Login to ECR
-    #   - name: Login to Amazon ECR
-    #     id: login-ecr
-    #     uses: aws-actions/amazon-ecr-login@v2      
-      
+
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+
+
+      - name: Build, Tag, and Push Docker Image to ECR
+        env:
+          ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+          ECR_REPOSITORY: testing/fast_api
+          IMAGE_TAG: latest
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG  
 
     #   # Step 5: Deploy to ECS
     #   - name: Deploy to ECS
