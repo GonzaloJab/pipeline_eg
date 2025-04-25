@@ -12,43 +12,33 @@ jobs:
     steps:
       # Step 1: Check out the code from the repository
       - name: Checkout Code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       # Step 2: Set up Docker Buildx (Docker multi-platform build)
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
 
-      # Step 3: Log in to Amazon ECR
-      - name: Log in to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v1  # v2 is the latest version
+      # Step 3: Configure AWS credentials
+        
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4 # More information on this action can be found below in the 'AWS Credentials' section
         with:
-          region: ${{ secrets.AWS_REGION }}  # Store your region as a secret in GitHub
+          role-to-assume: arn:aws:iam::354918374652:role/APP_Containers
+          aws-region: ${{ secrets.AWS_REGION }}
 
-
-      # Step 4: Build and push Docker image to ECR
-      - name: Build and Push Docker Image
-        run: |
-          # Set variables
-          IMAGE_TAG=latest
-          ECR_REPOSITORY=testing/fast_api  # Replace with your ECR repository name
-          AWS_REGION=eu-north-1  # Replace with your AWS region
-
-          # Build the Docker image
-          docker build -t $ECR_REPOSITORY:$IMAGE_TAG .
-
-          # Tag the Docker image for ECR
-          docker tag $ECR_REPOSITORY:$IMAGE_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG
-
-          # Push the Docker image to ECR
-          docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG
+     # Step 4: Amazon Login to ECR
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2      
+      
 
       # Step 5: Deploy to ECS
       - name: Deploy to ECS
         run: |
           # Set variables
-          ECS_CLUSTER=your-ecs-cluster-name  # Replace with your ECS cluster name
-          ECS_SERVICE=your-ecs-service-name  # Replace with your ECS service name
-          TASK_DEFINITION=your-task-definition-name  # Replace with your ECS task definition
+          CLUSTER_NAME=your-cluster-name  # Replace with your ECS cluster name
+          SERVICE_NAME=your-service-name  # Replace with your ECS service name
+          TASK_DEFINITION=your-task-definition  # Replace with your ECS task definition
 
-          # Update ECS service with the new task definition
-          aws ecs update-service --cluster $ECS_CLUSTER --service $ECS_SERVICE --task-definition $TASK_DEFINITION --region $AWS_REGION
+          # Update ECS service to use the new image
+          aws ecs update-service --cluster $CLUSTER_NAME --service $SERVICE_NAME --force-new-deployment
