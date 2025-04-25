@@ -4,6 +4,11 @@ from typing import List
 
 app = FastAPI()
 
+# Healthcheck endpoint
+@app.get("/health")
+async def healthcheck():
+    return {"status": "healthy"}
+
 class Task(BaseModel):
     title: str
     description: str = None
