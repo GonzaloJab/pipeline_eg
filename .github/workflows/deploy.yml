@@ -20,7 +20,10 @@ jobs:
 
       # Step 3: Log in to Amazon ECR
       - name: Log in to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v1
+        uses: aws-actions/amazon-ecr-login@v2  # v2 is the latest version
+        with:
+          region: ${{ secrets.AWS_REGION }}  # Store your region as a secret in GitHub
+
 
       # Step 4: Build and push Docker image to ECR
       - name: Build and Push Docker Image
