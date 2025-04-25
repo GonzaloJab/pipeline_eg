@@ -25,20 +25,21 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::354918374652:role/APP_Containers
           aws-region: ${{ secrets.AWS_REGION }}
-
-     # Step 4: Amazon Login to ECR
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2      
+  
+          
+    #  # Step 4: Amazon Login to ECR
+    #   - name: Login to Amazon ECR
+    #     id: login-ecr
+    #     uses: aws-actions/amazon-ecr-login@v2      
       
 
-      # Step 5: Deploy to ECS
-      - name: Deploy to ECS
-        run: |
-          # Set variables
-          CLUSTER_NAME=your-cluster-name  # Replace with your ECS cluster name
-          SERVICE_NAME=your-service-name  # Replace with your ECS service name
-          TASK_DEFINITION=your-task-definition  # Replace with your ECS task definition
+    #   # Step 5: Deploy to ECS
+    #   - name: Deploy to ECS
+    #     run: |
+    #       # Set variables
+    #       CLUSTER_NAME=your-cluster-name  # Replace with your ECS cluster name
+    #       SERVICE_NAME=your-service-name  # Replace with your ECS service name
+    #       TASK_DEFINITION=your-task-definition  # Replace with your ECS task definition
 
-          # Update ECS service to use the new image
-          aws ecs update-service --cluster $CLUSTER_NAME --service $SERVICE_NAME --force-new-deployment
+    #       # Update ECS service to use the new image
+    #       aws ecs update-service --cluster $CLUSTER_NAME --service $SERVICE_NAME --force-new-deployment
