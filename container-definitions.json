@@ -1,0 +1,34 @@
+[
+  {
+    "name": "backend",
+    "image": "<ECR_REGISTRY>/testing/fast_api-backend:<IMAGE_TAG>",
+    "memory": 512,
+    "cpu": 256,
+    "essential": true,
+    "portMappings": [
+      {
+        "containerPort": 8000,
+        "hostPort": 8000
+      }
+    ],
+    "environment": [
+      { "name": "ENV_VAR_NAME", "value": "value" }
+    ]
+  },
+  {
+    "name": "frontend",
+    "image": "<ECR_REGISTRY>/testing/fast_api-frontend:<IMAGE_TAG>",
+    "memory": 512,
+    "cpu": 256,
+    "essential": true,
+    "portMappings": [
+      {
+        "containerPort": 3000,
+        "hostPort": 3000
+      }
+    ],
+    "environment": [
+      { "name": "ENV_VAR_NAME", "value": "value" }
+    ]
+  }
+]

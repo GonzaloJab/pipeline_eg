@@ -3,7 +3,8 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    image: ${ECR_REGISTRY}/backend:${IMAGE_TAG}  # Add ECR image reference
+
+    image: ${ECR_REGISTRY}/testing/fast_api-backend:${IMAGE_TAG}  # Updated ECR image reference
     container_name: fastapi-backend
     ports:
       - "8000:8000"
@@ -14,7 +15,7 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile
-    image: ${ECR_REGISTRY}/frontend:${IMAGE_TAG}  # Add ECR image reference
+    image: ${ECR_REGISTRY}/testing/fast_api-frontend:${IMAGE_TAG}  # Updated ECR image reference
     container_name: node-frontend
     ports:
       - "3000:3000"

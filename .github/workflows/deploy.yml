@@ -39,26 +39,23 @@ jobs:
           ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
           IMAGE_TAG: latest
         run: |
-          # Update docker-compose.yml to include ECR registry and tags
-          # sed -i "s|image: backend|image: $ECR_REGISTRY/backend:$IMAGE_TAG|g" docker-compose.yml
-          # sed -i "s|image: frontend|image: $ECR_REGISTRY/frontend:$IMAGE_TAG|g" docker-compose.yml
-
           # Build and push images using docker compose
           docker compose build
           docker compose push
 
-      # Step 6: Deploy to ECS
+      # Step 6: Update ECS Task Definition and Deploy
       - name: Deploy to ECS
+        env:
+          ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+          IMAGE_TAG: latest
         run: |
-          # Set variables for your ECS cluster, service, and task definition
-          CLUSTER_NAME=testing  # Replace with your ECS cluster name
-          SERVICE_NAME=test_api-service-9v8glg2t  # Replace with your ECS service name
-          TASK_DEFINITION=test_api  # Replace with your ECS task definition
+          # Update container definitions dynamically
+          jq '.[] | select(.name=="backend").image = "'$ECR_REGISTRY'/testing/fast_api-backend:'$IMAGE_TAG'" | select(.name=="frontend").image = "'$ECR_REGISTRY'/testing/fast_api-frontend:'$IMAGE_TAG'"' container-definitions.json > updated-container-definitions.json
 
           # Register the new task definition with ECS
           aws ecs register-task-definition \
             --family $TASK_DEFINITION \
-            --container-definitions file://container-definitions.json  # JSON file with container definitions
+            --cli-input-json file://updated-container-definitions.json
 
           # Update ECS service to use the new task definition and force a new deployment
           aws ecs update-service \
