@@ -40,8 +40,8 @@ jobs:
           IMAGE_TAG: latest
         run: |
           # Update docker-compose.yml to include ECR registry and tags
-          sed -i "s|image: backend|image: $ECR_REGISTRY/backend:$IMAGE_TAG|g" docker-compose.yml
-          sed -i "s|image: frontend|image: $ECR_REGISTRY/frontend:$IMAGE_TAG|g" docker-compose.yml
+          # sed -i "s|image: backend|image: $ECR_REGISTRY/backend:$IMAGE_TAG|g" docker-compose.yml
+          # sed -i "s|image: frontend|image: $ECR_REGISTRY/frontend:$IMAGE_TAG|g" docker-compose.yml
 
           # Build and push images using docker compose
           docker compose build
