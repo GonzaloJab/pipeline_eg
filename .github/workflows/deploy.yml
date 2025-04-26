@@ -33,15 +33,19 @@ jobs:
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      # Step 5: Build, Tag, and Push Docker Image to ECR
-      - name: Build, Tag, and Push Docker Image to ECR
+      # Step 5: Build, Tag, and Push Docker Compose Services to ECR
+      - name: Build, Tag, and Push Docker Compose Services to ECR
         env:
           ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
-          ECR_REPOSITORY: testing/fast_api
           IMAGE_TAG: latest
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG  
+          # Update docker-compose.yml to include ECR registry and tags
+          sed -i "s|image: backend|image: $ECR_REGISTRY/backend:$IMAGE_TAG|g" docker-compose.yml
+          sed -i "s|image: frontend|image: $ECR_REGISTRY/frontend:$IMAGE_TAG|g" docker-compose.yml
+
+          # Build and push images using docker compose
+          docker compose build
+          docker compose push
 
       # Step 6: Deploy to ECS
       - name: Deploy to ECS
