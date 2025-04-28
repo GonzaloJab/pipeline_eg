@@ -43,7 +43,7 @@ jobs:
           docker compose build
           docker compose push
 
-      # Step 6: Update ECS Task Definition and Deploy
+      # Step 6: Update ECS Task Definition and Deploys
       - name: Deploy to ECS
         env:
           ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
