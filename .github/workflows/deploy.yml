@@ -49,14 +49,17 @@ jobs:
           ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
           IMAGE_TAG: latest
           TASK_DEFINITION: test_api      # Set your ECS task family name here
-          CLUSTER_NAME: testing       # Set your ECS cluster name here
-          SERVICE_NAME: test_api-service-9v8glg2t     # Set your ECS service name here
+          CLUSTER_NAME: testing          # Set your ECS cluster name here
+          SERVICE_NAME: test_api-service-9v8glg2t  # Set your ECS service name here
         run: |
-          # Update container definitions dynamically using jq with variables
+          # Update container definitions dynamically and wrap the array into an object
           jq --arg backend "$ECR_REGISTRY/testing/fast_api-backend:$IMAGE_TAG" \
              --arg frontend "$ECR_REGISTRY/testing/fast_api-frontend:$IMAGE_TAG" \
-             '(.[] | select(.name=="backend").image) = $backend | (.[] | select(.name=="frontend").image) = $frontend' \
-             container-definitions.json > updated-container-definitions.json
+             'map(
+                 if .name == "backend" then .image = $backend
+                 elif .name == "frontend" then .image = $frontend
+                 else . end
+              ) | {containerDefinitions: .}' container-definitions.json > updated-container-definitions.json
 
           # Register the new task definition with ECS
           aws ecs register-task-definition \
