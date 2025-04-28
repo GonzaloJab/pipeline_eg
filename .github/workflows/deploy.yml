@@ -52,14 +52,10 @@ jobs:
           CLUSTER_NAME: testing          # Set your ECS cluster name here
           SERVICE_NAME: test_api-service-9v8glg2t  # Set your ECS service name here
         run: |
-          # Update container definitions dynamically and wrap the array into an object
-          jq --arg backend "$ECR_REGISTRY/testing/fast_api-backend:$IMAGE_TAG" \
-             --arg frontend "$ECR_REGISTRY/testing/fast_api-frontend:$IMAGE_TAG" \
-             'map(
-                 if .name == "backend" then .image = $backend
-                 elif .name == "frontend" then .image = $frontend
-                 else . end
-              ) | {containerDefinitions: .}' container-definitions.json > updated-container-definitions.json
+          # Update container definitions dynamically for container fast_api_container and wrap the array into an object
+          jq --arg image "$ECR_REGISTRY/testing/fast_api:$IMAGE_TAG" \
+             'map( if .name == "fast_api_container" then .image = $image else . end ) | {containerDefinitions: .}' \
+             container-definitions.json > updated-container-definitions.json
 
           # Register the new task definition with ECS
           aws ecs register-task-definition \
