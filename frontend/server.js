@@ -6,6 +6,11 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 app.use(express.json());
 
+// Health-check endpoint for the frontend
+app.get('/health', (req, res) => {
+  res.json({ status: 'healthy' });
+});
+
 const API_URL = 'http://backend:8000/tasks';  // Connect to FastAPI service by service name
 
 async function fetchTasks() {
