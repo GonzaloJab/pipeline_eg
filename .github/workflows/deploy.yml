@@ -45,6 +45,9 @@ jobs:
 
       # Step 6: Update ECS Task Definition and Deploys
       - name: Deploy to ECS
+        env:
+          ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+          TASK_DEFINITION: test_api  # Explicitly set if not already defined
         run: |
           # 1. Update container images
           jq --arg backend_image "$ECR_REGISTRY/testing/fast_api:backend-latest" \
