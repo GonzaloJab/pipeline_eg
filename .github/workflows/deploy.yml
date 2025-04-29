@@ -53,20 +53,20 @@ jobs:
           SERVICE_NAME: test_api-service-9v8glg2t  # Set your ECS service name here
         run: |
           # Update image for both frontend and backend containers in task definition
-          jq --arg frontend_image "$ECR_REGISTRY:frontend-$IMAGE_TAG" \
-            --arg backend_image "$ECR_REGISTRY:backend-$IMAGE_TAG" \
-            'map( if .name == "frontend_container" then .image = $frontend_image elif .name == "backend_container" then .image = $backend_image else . end ) | {containerDefinitions: .}' \
-            container-definitions.json > updated-container-definitions.json
-
+          jq --arg frontend_image "$ECR_REGISTRY/frontend-latest:$IMAGE_TAG" \
+             --arg backend_image "$ECR_REGISTRY/backend-latest:$IMAGE_TAG" \
+             'map( if .name == "frontend_container" then .image = $frontend_image elif .name == "backend_container" then .image = $backend_image else . end ) | {containerDefinitions: .}' \
+             container-definitions.json > updated-container-definitions.json
+      
           # Register new revision of the task definition
           NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
             --family $TASK_DEFINITION \
             --cli-input-json file://updated-container-definitions.json \
             --query 'taskDefinition.taskDefinitionArn' \
             --output text)
-
+      
           echo "New Task Definition ARN: $NEW_TASK_DEF_ARN"  # Debugging output
-
+      
           # Update ECS service to use the new task definition and force new deployment
           aws ecs update-service \
             --cluster $CLUSTER_NAME \
