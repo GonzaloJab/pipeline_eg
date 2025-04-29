@@ -2,6 +2,7 @@
   {
     "name": "backend",
     "image": "354918374652.dkr.ecr.eu-north-1.amazonaws.com/testing/fast_api:backend-latest",
+    "requiresCompatibilities": ["FARGATE"],
     "memory": 512,
     "cpu": 256,
     "essential": true,
@@ -18,6 +19,7 @@
   {
     "name": "frontend",
     "image": "354918374652.dkr.ecr.eu-north-1.amazonaws.com/testing/fast_api:frontend-latest",
+    "requiresCompatibilities": ["FARGATE"],
     "memory": 512,
     "cpu": 256,
     "essential": true,
