@@ -48,6 +48,7 @@ jobs:
         env:
           ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
           TASK_DEFINITION: test_api  # Explicitly set if not already defined
+          EXECUTION_ROLE_ARN: arn:aws:iam::354918374652:role/ecsTaskExecutionRole
         run: |
           # 1. Update container images
           jq --arg backend_image "$ECR_REGISTRY/testing/fast_api:backend-latest" \
@@ -55,10 +56,11 @@ jobs:
             'map( if .name == "backend" then .image = $backend_image elif .name == "frontend" then .image = $frontend_image else . end )' \
             container-definitions.json > updated-container-definitions.json
       
-          # 2. Create complete task definition JSON with ALL required fields
+          # 2. Create complete task definition
           cat <<EOF > final-task-definition.json
           {
             "family": "$TASK_DEFINITION",
+            "executionRoleArn": "$EXECUTION_ROLE_ARN",
             "requiresCompatibilities": ["FARGATE"],
             "networkMode": "awsvpc",
             "cpu": "1024",
