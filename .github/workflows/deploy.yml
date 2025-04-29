@@ -57,10 +57,12 @@ jobs:
              'map( if .name == "fast_api_container" then .image = $image else . end ) | {containerDefinitions: .}' \
              container-definitions.json > updated-container-definitions.json
 
-          # # Register the new task definition with ECS
-          # aws ecs register-task-definition \
-          #   --family $TASK_DEFINITION \
-          #   --cli-input-json file://updated-container-definitions.json
+          # Register new revision of the task definition
+          NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
+            --family $TASK_DEFINITION \
+            --cli-input-json file://updated-container-definitions.json \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
 
           # Update ECS service to use the new task definition and force a new deployment
           aws ecs update-service \
