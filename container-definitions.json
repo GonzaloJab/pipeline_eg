@@ -1,7 +1,7 @@
 [
   {
     "name": "backend",
-    "image": "<ECR_REGISTRY>/testing/fast_api-backend:<IMAGE_TAG>",
+    "image": "<ECR_REGISTRY>/testing/fast_api:backend-<IMAGE_TAG>",
     "memory": 512,
     "cpu": 256,
     "essential": true,
@@ -17,7 +17,7 @@
   },
   {
     "name": "frontend",
-    "image": "<ECR_REGISTRY>/testing/fast_api-frontend:<IMAGE_TAG>",
+    "image": "<ECR_REGISTRY>/testing/fast_api:frontend-<IMAGE_TAG>",
     "memory": 512,
     "cpu": 256,
     "essential": true,
