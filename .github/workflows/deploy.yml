@@ -50,10 +50,20 @@ jobs:
           IMAGE_TAG: latest
           TASK_DEFINITION: test_api
           CLUSTER_NAME: testing
-          SERVICE_NAME: test_api-service-9v8glg2t
+          SERVICE_NAME: test_api-service
           EXECUTION_ROLE_ARN: arn:aws:iam::354918374652:role/ecsTaskExecutionRole
           AWS_REGION: eu-north-1
         run: |
+          # Get the ACTUAL service name (with suffix)
+          ACTUAL_SERVICE_NAME=$(aws ecs list-services --cluster $CLUSTER_NAME --region $AWS_REGION \
+            --query "serviceArns[?contains(@, '$SERVICE_NAME-')]" \
+            --output text | awk -F'/' '{print $NF}')  
+
+          # Fallback if no suffixed service exists
+          if [ -z "$ACTUAL_SERVICE_NAME" ]; then
+            ACTUAL_SERVICE_NAME="$SERVICE_NAME"
+          fi
+
           # Debug: Print all environment variables
           echo "ECR_REGISTRY: $ECR_REGISTRY"
           echo "CLUSTER_NAME: $CLUSTER_NAME"
@@ -93,7 +103,7 @@ jobs:
           # 5. Deploy service
           aws ecs update-service \
             --cluster $CLUSTER_NAME \
-            --service $SERVICE_NAME \
+            --service $ACTUAL_SERVICE_NAME  \
             --task-definition $NEW_TASK_DEF_ARN \
             --region $AWS_REGION \
             --force-new-deployment
