@@ -2,7 +2,6 @@
   {
     "name": "backend",
     "image": "354918374652.dkr.ecr.eu-north-1.amazonaws.com/testing/fast_api:backend-latest",
-    "requiresCompatibilities": ["FARGATE"],
     "memory": 512,
     "cpu": 256,
     "essential": true,
@@ -13,13 +12,12 @@
       }
     ],
     "environment": [
-      { "name": "ENV_VAR_NAME", "value": "value" }
+      {"name": "ENV_VAR_NAME", "value": "value"}
     ]
   },
   {
     "name": "frontend",
     "image": "354918374652.dkr.ecr.eu-north-1.amazonaws.com/testing/fast_api:frontend-latest",
-    "requiresCompatibilities": ["FARGATE"],
     "memory": 512,
     "cpu": 256,
     "essential": true,
@@ -30,7 +28,7 @@
       }
     ],
     "environment": [
-      { "name": "ENV_VAR_NAME", "value": "value" }
+      {"name": "ENV_VAR_NAME", "value": "value"}
     ]
   }
 ]
