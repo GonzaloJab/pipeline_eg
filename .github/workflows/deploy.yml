@@ -51,25 +51,29 @@ jobs:
             --arg frontend_image "$ECR_REGISTRY/testing/fast_api:frontend-latest" \
             'map( if .name == "backend" then .image = $backend_image elif .name == "frontend" then .image = $frontend_image else . end )' \
             container-definitions.json > updated-container-definitions.json
-
-          # 2. Create complete task definition JSON
-          echo '{
-            "family": "'"$TASK_DEFINITION"'",
+      
+          # 2. Create complete task definition JSON with ALL required fields
+          cat <<EOF > final-task-definition.json
+          {
+            "family": "$TASK_DEFINITION",
             "requiresCompatibilities": ["FARGATE"],
             "networkMode": "awsvpc",
             "cpu": "1024",
             "memory": "3072",
-            "containerDefinitions": ' > final-task-definition.json
-          cat updated-container-definitions.json >> final-task-definition.json
-          echo '}' >> final-task-definition.json
-
-          # 3. Register task definition
+            "containerDefinitions": $(cat updated-container-definitions.json)
+          }
+          EOF
+      
+          # 3. Validate the JSON
+          jq '.' final-task-definition.json
+      
+          # 4. Register task definition
           NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
             --cli-input-json file://final-task-definition.json \
             --query 'taskDefinition.taskDefinitionArn' \
             --output text)
-
-          # 4. Deploy
+      
+          # 5. Deploy
           aws ecs update-service \
             --cluster $CLUSTER_NAME \
             --service $SERVICE_NAME \
