@@ -50,7 +50,7 @@ jobs:
           IMAGE_TAG: latest
           TASK_DEFINITION: test_api      # Set your ECS task family name here
           CLUSTER_NAME: testing          # Set your ECS cluster name here
-          SERVICE_NAME: test_api-service-9v8glg2t  # Set your ECS service name here
+          SERVICE_NAME: test_api-service-qav2njq3  # Set your ECS service name here
         run: |
           # Update image for both frontend and backend containers in task definition
           jq --arg frontend_image "$ECR_REGISTRY/frontend-latest:$IMAGE_TAG" \
