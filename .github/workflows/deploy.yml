@@ -47,15 +47,24 @@ jobs:
       - name: Deploy to ECS
         env:
           ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
-          TASK_DEFINITION: test_api  # Explicitly set if not already defined
+          IMAGE_TAG: latest
+          TASK_DEFINITION: test_api
+          CLUSTER_NAME: testing
+          SERVICE_NAME: test_api-service-9v8glg2t
           EXECUTION_ROLE_ARN: arn:aws:iam::354918374652:role/ecsTaskExecutionRole
+          AWS_REGION: eu-north-1
         run: |
+          # Debug: Print all environment variables
+          echo "ECR_REGISTRY: $ECR_REGISTRY"
+          echo "CLUSTER_NAME: $CLUSTER_NAME"
+          echo "SERVICE_NAME: $SERVICE_NAME"
+
           # 1. Update container images
           jq --arg backend_image "$ECR_REGISTRY/testing/fast_api:backend-latest" \
             --arg frontend_image "$ECR_REGISTRY/testing/fast_api:frontend-latest" \
             'map( if .name == "backend" then .image = $backend_image elif .name == "frontend" then .image = $frontend_image else . end )' \
             container-definitions.json > updated-container-definitions.json
-      
+
           # 2. Create complete task definition
           cat <<EOF > final-task-definition.json
           {
@@ -68,19 +77,23 @@ jobs:
             "containerDefinitions": $(cat updated-container-definitions.json)
           }
           EOF
-      
-          # 3. Validate the JSON
+
+          # 3. Validate JSON
           jq '.' final-task-definition.json
-      
+
           # 4. Register task definition
           NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
             --cli-input-json file://final-task-definition.json \
+            --region $AWS_REGION \
             --query 'taskDefinition.taskDefinitionArn' \
             --output text)
-      
-          # 5. Deploy
+
+          echo "Registered task definition ARN: $NEW_TASK_DEF_ARN"
+
+          # 5. Deploy service
           aws ecs update-service \
             --cluster $CLUSTER_NAME \
             --service $SERVICE_NAME \
             --task-definition $NEW_TASK_DEF_ARN \
+            --region $AWS_REGION \
             --force-new-deployment
