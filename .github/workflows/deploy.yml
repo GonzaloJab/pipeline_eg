@@ -64,9 +64,11 @@ jobs:
             --query 'taskDefinition.taskDefinitionArn' \
             --output text)
 
-          # Update ECS service to use the new task definition and force a new deployment
+          echo "New Task Definition ARN: $NEW_TASK_DEF_ARN"  # Debugging output
+
+          # Update ECS service to use the new task definition and force new deployment
           aws ecs update-service \
             --cluster $CLUSTER_NAME \
             --service $SERVICE_NAME \
-            --task-definition $TASK_DEFINITION \
+            --task-definition $NEW_TASK_DEF_ARN \
             --force-new-deployment
