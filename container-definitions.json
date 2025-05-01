@@ -14,7 +14,7 @@
     "environment": [
       {
         "name": "ALLOWED_ORIGINS",
-        "value": "http://FastApi-test-900773657.eu-north-1.elb.amazonaws.com"
+        "value": ""
       }
     ]
   },
