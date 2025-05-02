@@ -11,7 +11,7 @@ app.get('/health', (req, res) => {
   res.json({ status: 'healthy' });
 });
 
-const API_URL = '/api';  // Connect to FastAPI service by service name
+const API_URL = 'http://FastApi-test-900773657.eu-north-1.elb.amazonaws.com/tasks';
 
 async function fetchTasks() {
   const res = await fetch(API_URL);
