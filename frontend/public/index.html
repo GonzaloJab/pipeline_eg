@@ -10,7 +10,7 @@
   </style>
 </head>
 <body>
-  <h1>Tasks</h1>
+  <h1>Tasks V0</h1>
 
   <form id="taskForm">
     <input type="text" id="title" placeholder="Title" required>
@@ -21,44 +21,60 @@
   <div id="tasks"></div>
 
   <script>
-    const API_URL = 'http://localhost:8000/tasks';
+    const API_URL = 'http://localhost:8000/tasks'; //Production: 'http://FastApi-test-900773657.eu-north-1.elb.amazonaws.com/tasks';
 
+    // Fetch and display tasks
     async function fetchTasks() {
-      const res = await fetch(API_URL);
-      const tasks = await res.json();
-      const container = document.getElementById('tasks');
-      container.innerHTML = '';
-      tasks.forEach((task, index) => {
-        const div = document.createElement('div');
-        div.className = 'task';
-        div.innerHTML = `
-          <strong>${task.title}</strong> - ${task.description || ''}
-          <button onclick="deleteTask(${index})">Delete</button>
-        `;
-        container.appendChild(div);
-      });
+      try {
+        const res = await fetch(API_URL);
+        const tasks = await res.json();
+        const container = document.getElementById('tasks');
+        container.innerHTML = '';
+        tasks.forEach((task, index) => {
+          const div = document.createElement('div');
+          div.className = 'task';
+          div.innerHTML = `
+            <strong>${task.title}</strong> - ${task.description || ''}
+            <button onclick="deleteTask(${index})">Delete</button>
+          `;
+          container.appendChild(div);
+        });
+      } catch (error) {
+        console.error('Error fetching tasks:', error);
+      }
     }
 
+    // Delete a task and refresh the list
     async function deleteTask(index) {
-      await fetch(`${API_URL}/${index}`, { method: 'DELETE' });
-      fetchTasks();
+      try {
+        await fetch(`${API_URL}/${index}`, { method: 'DELETE' });
+        fetchTasks();
+      } catch (error) {
+        console.error('Error deleting task:', error);
+      }
     }
 
+    // Handle form submission to create a new task
     document.getElementById('taskForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const title = document.getElementById('title').value;
       const description = document.getElementById('description').value;
 
-      await fetch(API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, description })
-      });
+      try {
+        await fetch(API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, description })
+        });
 
-      document.getElementById('taskForm').reset();
-      fetchTasks();
+        document.getElementById('taskForm').reset();
+        fetchTasks(); // Refresh the task list after creating a task
+      } catch (error) {
+        console.error('Error creating task:', error);
+      }
     });
 
+    // Initial fetch of tasks when the page loads
     fetchTasks();
   </script>
 </body>

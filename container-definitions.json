@@ -12,7 +12,10 @@
       }
     ],
     "environment": [
-      {"name": "ENV_VAR_NAME", "value": "value"}
+      {
+        "name": "ALLOWED_ORIGINS",
+        "value": ""
+      }
     ]
   },
   {
