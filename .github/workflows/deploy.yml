@@ -110,15 +110,7 @@ jobs:
               --force-new-deployment
           else
             echo "Creating new backend service"
-            aws ecs create-service \
-              --cluster testing \
-              --service-name fastapi-backend-service \
-              --task-definition $BACKEND_TASK_ARN \
-              --launch-type FARGATE \
-              --desired-count 1 \
-              --network-configuration "awsvpcConfiguration={subnets=[subnet-xxxxxx,subnet-yyyyyy],securityGroups=[sg-zzzzzz],assignPublicIp=DISABLED}" \
-              --load-balancers targetGroupArn=arn:aws:elasticloadbalancing:***:***:targetgroup/FastAPI-test-backend/7528d3dd3d269edc,containerName=backend,containerPort=8000 \
-              --region ***
+            echo "backend not created...was created before"
           fi
 
       - name: Deploy Frontend Service
