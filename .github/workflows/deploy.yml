@@ -151,7 +151,7 @@ jobs:
                 "logConfiguration": {
                   "logDriver": "awslogs",
                   "options": {
-                    "awslogs-group": "/ecs/node-frontend",
+                    "awslogs-group": "/ecs/fastapi-frontend",
                     "awslogs-region": "$AWS_REGION",
                     "awslogs-stream-prefix": "ecs"
                   }
