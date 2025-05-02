@@ -15,8 +15,8 @@ env:
   CLUSTER_NAME: testing
   AWS_REGION: eu-north-1
   EXECUTION_ROLE_ARN: arn:aws:iam::354918374652:role/ecsTaskExecutionRole
-  VPC_SUBNETS: "subnet-xxxxxx,subnet-yyyyyy"  # Replace with your subnet IDs
-  SECURITY_GROUP: "sg-zzzzzz"  # Replace with your security group ID
+  VPC_SUBNETS: vpc-017328606a774e563  # Replace with your subnet IDs
+  SECURITY_GROUP: sg-08721e8cd1e5d3851  # Replace with your security group ID
 
 jobs:
   build-and-deploy:
