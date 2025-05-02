@@ -51,7 +51,7 @@ jobs:
           cat <<EOF > backend-task-def.json
           {
             "family": "fastapi-backend",
-            "executionRoleArn": "${{ env.EXECUTION_ROLE_ARN }}",
+            "executionRoleArn": "arn:aws:iam::***:role/ecsTaskExecutionRole",
             "networkMode": "awsvpc",
             "requiresCompatibilities": ["FARGATE"],
             "cpu": "1024",
@@ -59,7 +59,7 @@ jobs:
             "containerDefinitions": [
               {
                 "name": "backend",
-                "image": "${{ env.ECR_REGISTRY }}/testing/fast_api:backend-${{ env.IMAGE_TAG }}",
+                "image": "***.dkr.ecr.***.amazonaws.com/testing/fast_api:backend-latest",
                 "essential": true,
                 "portMappings": [
                   {
@@ -75,7 +75,7 @@ jobs:
                   "logDriver": "awslogs",
                   "options": {
                     "awslogs-group": "/ecs/fastapi-backend",
-                    "awslogs-region": "${{ env.AWS_REGION }}",
+                    "awslogs-region": "***",
                     "awslogs-stream-prefix": "ecs"
                   }
                 }
@@ -87,31 +87,38 @@ jobs:
           # Register task definition
           BACKEND_TASK_ARN=$(aws ecs register-task-definition \
             --cli-input-json file://backend-task-def.json \
-            --region ${{ env.AWS_REGION }} \
+            --region *** \
             --query 'taskDefinition.taskDefinitionArn' \
             --output text)
           echo "Backend task ARN: $BACKEND_TASK_ARN"
 
-          # Create or update service
-          if aws ecs describe-services --cluster ${{ env.CLUSTER_NAME }} --services fastapi-backend-service --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
+          # Check if service exists
+          SERVICE_EXISTS=$(aws ecs describe-services \
+            --cluster testing \
+            --services fastapi-backend-service \
+            --region *** \
+            --query 'services[?status==`ACTIVE`].serviceName' \
+            --output text)
+
+          if [ "$SERVICE_EXISTS" = "fastapi-backend-service" ]; then
             echo "Updating existing backend service"
             aws ecs update-service \
-              --cluster ${{ env.CLUSTER_NAME }} \
+              --cluster testing \
               --service fastapi-backend-service \
               --task-definition $BACKEND_TASK_ARN \
-              --region ${{ env.AWS_REGION }} \
+              --region *** \
               --force-new-deployment
           else
             echo "Creating new backend service"
             aws ecs create-service \
-              --cluster ${{ env.CLUSTER_NAME }} \
+              --cluster testing \
               --service-name fastapi-backend-service \
               --task-definition $BACKEND_TASK_ARN \
               --launch-type FARGATE \
               --desired-count 1 \
-              --network-configuration "awsvpcConfiguration={subnets=[${{ env.VPC_SUBNETS }}],securityGroups=[${{ env.SECURITY_GROUP }}],assignPublicIp=DISABLED}" \
-              --load-balancers targetGroupArn=${{ env.BACKEND_TG_ARN }},containerName=backend,containerPort=8000 \
-              --region ${{ env.AWS_REGION }}
+              --network-configuration "awsvpcConfiguration={subnets=[subnet-xxxxxx,subnet-yyyyyy],securityGroups=[sg-zzzzzz],assignPublicIp=DISABLED}" \
+              --load-balancers targetGroupArn=arn:aws:elasticloadbalancing:***:***:targetgroup/FastAPI-test-backend/7528d3dd3d269edc,containerName=backend,containerPort=8000 \
+              --region ***
           fi
 
       - name: Deploy Frontend Service
