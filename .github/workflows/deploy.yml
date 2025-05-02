@@ -3,107 +3,179 @@ name: Build and Deploy to ECS
 on:
   push:
     branches:
-      - main  # Trigger the workflow on push to the main branch
+      - main
 
 permissions:
   id-token: write
   contents: read
 
+env:
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+  IMAGE_TAG: latest
+  CLUSTER_NAME: testing
+  AWS_REGION: eu-north-1
+  EXECUTION_ROLE_ARN: arn:aws:iam::354918374652:role/ecsTaskExecutionRole
+  VPC_SUBNETS: "subnet-xxxxxx,subnet-yyyyyy"  # Replace with your subnet IDs
+  SECURITY_GROUP: "sg-zzzzzz"  # Replace with your security group ID
+
 jobs:
   build-and-deploy:
-    runs-on: ubuntu-latest  # Use the latest Ubuntu environment for the build
+    runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Check out the code from the repository
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      # Step 2: Set up Docker Buildx (Docker multi-platform build)
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
 
-      # Step 3: Configure AWS credentials
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::354918374652:role/GITHUB_deploy
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
 
-      # Step 4: Login to Amazon ECR
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      # Step 5: Build, Tag, and Push Docker Compose Services to ECR
-      - name: Build, Tag, and Push Docker Compose Services to ECR
-        env:
-          ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
-          IMAGE_TAG: latest
+      - name: Build, Tag, and Push Images
         run: |
-          # Build and push images using docker compose
           docker compose build
           docker compose push
 
-      # Step 6: Update ECS Task Definition and Deploys
-      - name: Deploy to ECS
-        env:
-          ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
-          IMAGE_TAG: latest
-          TASK_DEFINITION: test_api
-          CLUSTER_NAME: testing
-          SERVICE_NAME: test_api-service
-          EXECUTION_ROLE_ARN: arn:aws:iam::354918374652:role/ecsTaskExecutionRole
-          AWS_REGION: eu-north-1
+      - name: Deploy Backend Service
         run: |
-          # Get the ACTUAL service name (with suffix)
-          ACTUAL_SERVICE_NAME=$(aws ecs list-services --cluster $CLUSTER_NAME --region $AWS_REGION \
-            --query "serviceArns[?contains(@, '$SERVICE_NAME-')]" \
-            --output text | awk -F'/' '{print $NF}')  
-
-          # Fallback if no suffixed service exists
-          if [ -z "$ACTUAL_SERVICE_NAME" ]; then
-            ACTUAL_SERVICE_NAME="$SERVICE_NAME"
-          fi
-
-          # Debug: Print all environment variables
-          echo "ECR_REGISTRY: $ECR_REGISTRY"
-          echo "CLUSTER_NAME: $CLUSTER_NAME"
-          echo "SERVICE_NAME: $SERVICE_NAME"
-
-          # 1. Update container images
-          jq --arg backend_image "$ECR_REGISTRY/testing/fast_api:backend-latest" \
-            --arg frontend_image "$ECR_REGISTRY/testing/fast_api:frontend-latest" \
-            'map( if .name == "backend" then .image = $backend_image elif .name == "frontend" then .image = $frontend_image else . end )' \
-            container-definitions.json > updated-container-definitions.json
-
-          # 2. Create complete task definition
-          cat <<EOF > final-task-definition.json
+          # Create backend task definition JSON
+          cat <<EOF > backend-task-def.json
           {
-            "family": "$TASK_DEFINITION",
-            "executionRoleArn": "$EXECUTION_ROLE_ARN",
-            "requiresCompatibilities": ["FARGATE"],
+            "family": "fastapi-backend",
+            "executionRoleArn": "${{ env.EXECUTION_ROLE_ARN }}",
             "networkMode": "awsvpc",
+            "requiresCompatibilities": ["FARGATE"],
             "cpu": "1024",
-            "memory": "3072",
-            "containerDefinitions": $(cat updated-container-definitions.json)
+            "memory": "2048",
+            "containerDefinitions": [
+              {
+                "name": "backend",
+                "image": "${{ env.ECR_REGISTRY }}/testing/fast_api:backend-${{ env.IMAGE_TAG }}",
+                "essential": true,
+                "portMappings": [
+                  {
+                    "containerPort": 8000,
+                    "hostPort": 8000,
+                    "protocol": "tcp"
+                  }
+                ],
+                "environment": [
+                  {"name": "ENV_VAR_NAME", "value": "value"}
+                ],
+                "logConfiguration": {
+                  "logDriver": "awslogs",
+                  "options": {
+                    "awslogs-group": "/ecs/fastapi-backend",
+                    "awslogs-region": "${{ env.AWS_REGION }}",
+                    "awslogs-stream-prefix": "ecs"
+                  }
+                }
+              }
+            ]
           }
           EOF
 
-          # 3. Validate JSON
-          jq '.' final-task-definition.json
-
-          # 4. Register task definition
-          NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
-            --cli-input-json file://final-task-definition.json \
-            --region $AWS_REGION \
+          # Register task definition
+          BACKEND_TASK_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file://backend-task-def.json \
+            --region ${{ env.AWS_REGION }} \
             --query 'taskDefinition.taskDefinitionArn' \
             --output text)
+          echo "Backend task ARN: $BACKEND_TASK_ARN"
 
-          echo "Registered task definition ARN: $NEW_TASK_DEF_ARN"
+          # Create or update service
+          if aws ecs describe-services --cluster ${{ env.CLUSTER_NAME }} --services fastapi-backend-service --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
+            echo "Updating existing backend service"
+            aws ecs update-service \
+              --cluster ${{ env.CLUSTER_NAME }} \
+              --service fastapi-backend-service \
+              --task-definition $BACKEND_TASK_ARN \
+              --region ${{ env.AWS_REGION }} \
+              --force-new-deployment
+          else
+            echo "Creating new backend service"
+            aws ecs create-service \
+              --cluster ${{ env.CLUSTER_NAME }} \
+              --service-name fastapi-backend-service \
+              --task-definition $BACKEND_TASK_ARN \
+              --launch-type FARGATE \
+              --desired-count 1 \
+              --network-configuration "awsvpcConfiguration={subnets=[${{ env.VPC_SUBNETS }}],securityGroups=[${{ env.SECURITY_GROUP }}],assignPublicIp=ENABLED}" \
+              --region ${{ env.AWS_REGION }}
+          fi
 
-          # 5. Deploy service
-          aws ecs update-service \
-            --cluster $CLUSTER_NAME \
-            --service $ACTUAL_SERVICE_NAME  \
-            --task-definition $NEW_TASK_DEF_ARN \
-            --region $AWS_REGION \
-            --force-new-deployment
+      - name: Deploy Frontend Service
+        run: |
+          # Create frontend task definition JSON
+          cat <<EOF > frontend-task-def.json
+          {
+            "family": "node-frontend",
+            "executionRoleArn": "${{ env.EXECUTION_ROLE_ARN }}",
+            "networkMode": "awsvpc",
+            "requiresCompatibilities": ["FARGATE"],
+            "cpu": "1024",
+            "memory": "2048",
+            "containerDefinitions": [
+              {
+                "name": "frontend",
+                "image": "${{ env.ECR_REGISTRY }}/testing/fast_api:frontend-${{ env.IMAGE_TAG }}",
+                "essential": true,
+                "portMappings": [
+                  {
+                    "containerPort": 3000,
+                    "hostPort": 3000,
+                    "protocol": "tcp"
+                  }
+                ],
+                "environment": [
+                  {"name": "BACKEND_URL", "value": "http://fastapi-backend-service:8000"},
+                  {"name": "ENV_VAR_NAME", "value": "value"}
+                ],
+                "logConfiguration": {
+                  "logDriver": "awslogs",
+                  "options": {
+                    "awslogs-group": "/ecs/node-frontend",
+                    "awslogs-region": "${{ env.AWS_REGION }}",
+                    "awslogs-stream-prefix": "ecs"
+                  }
+                }
+              }
+            ]
+          }
+          EOF
+
+          # Register task definition
+          FRONTEND_TASK_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file://frontend-task-def.json \
+            --region ${{ env.AWS_REGION }} \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+          echo "Frontend task ARN: $FRONTEND_TASK_ARN"
+
+          # Create or update service
+          if aws ecs describe-services --cluster ${{ env.CLUSTER_NAME }} --services node-frontend-service --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
+            echo "Updating existing frontend service"
+            aws ecs update-service \
+              --cluster ${{ env.CLUSTER_NAME }} \
+              --service node-frontend-service \
+              --task-definition $FRONTEND_TASK_ARN \
+              --region ${{ env.AWS_REGION }} \
+              --force-new-deployment
+          else
+            echo "Creating new frontend service"
+            aws ecs create-service \
+              --cluster ${{ env.CLUSTER_NAME }} \
+              --service-name node-frontend-service \
+              --task-definition $FRONTEND_TASK_ARN \
+              --launch-type FARGATE \
+              --desired-count 1 \
+              --network-configuration "awsvpcConfiguration={subnets=[${{ env.VPC_SUBNETS }}],securityGroups=[${{ env.SECURITY_GROUP }}],assignPublicIp=ENABLED}" \
+              --region ${{ env.AWS_REGION }}
+          fi
