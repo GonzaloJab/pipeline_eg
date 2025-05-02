@@ -127,7 +127,7 @@ jobs:
           cat <<EOF > frontend-task-def.json
           {
             "family": "node-frontend",
-            "executionRoleArn": "${{ env.EXECUTION_ROLE_ARN }}",
+            "executionRoleArn": "$EXECUTION_ROLE_ARN",
             "networkMode": "awsvpc",
             "requiresCompatibilities": ["FARGATE"],
             "cpu": "1024",
@@ -135,7 +135,7 @@ jobs:
             "containerDefinitions": [
               {
                 "name": "frontend",
-                "image": "${{ env.ECR_REGISTRY }}/testing/fast_api:frontend-${{ env.IMAGE_TAG }}",
+                "image": "$ECR_REGISTRY/testing/fast_api:frontend-$IMAGE_TAG",
                 "essential": true,
                 "portMappings": [
                   {
@@ -152,7 +152,7 @@ jobs:
                   "logDriver": "awslogs",
                   "options": {
                     "awslogs-group": "/ecs/node-frontend",
-                    "awslogs-region": "${{ env.AWS_REGION }}",
+                    "awslogs-region": "$AWS_REGION",
                     "awslogs-stream-prefix": "ecs"
                   }
                 }
@@ -160,33 +160,48 @@ jobs:
             ]
           }
           EOF
-
+      
           # Register task definition
           FRONTEND_TASK_ARN=$(aws ecs register-task-definition \
             --cli-input-json file://frontend-task-def.json \
-            --region ${{ env.AWS_REGION }} \
+            --region $AWS_REGION \
             --query 'taskDefinition.taskDefinitionArn' \
             --output text)
           echo "Frontend task ARN: $FRONTEND_TASK_ARN"
-
-          # Create or update service
-          if aws ecs describe-services --cluster ${{ env.CLUSTER_NAME }} --services node-frontend-service --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
+      
+          # Check service existence more reliably
+          SERVICE_STATUS=$(aws ecs describe-services \
+            --cluster $CLUSTER_NAME \
+            --services node-frontend-service \
+            --region $AWS_REGION \
+            --query 'services[0].status' \
+            --output text 2>/dev/null || echo "MISSING")
+      
+          if [ "$SERVICE_STATUS" = "ACTIVE" ]; then
             echo "Updating existing frontend service"
             aws ecs update-service \
-              --cluster ${{ env.CLUSTER_NAME }} \
+              --cluster $CLUSTER_NAME \
               --service node-frontend-service \
               --task-definition $FRONTEND_TASK_ARN \
-              --region ${{ env.AWS_REGION }} \
+              --region $AWS_REGION \
               --force-new-deployment
           else
             echo "Creating new frontend service"
             aws ecs create-service \
-              --cluster ${{ env.CLUSTER_NAME }} \
+              --cluster $CLUSTER_NAME \
               --service-name node-frontend-service \
               --task-definition $FRONTEND_TASK_ARN \
               --launch-type FARGATE \
               --desired-count 1 \
-              --network-configuration "awsvpcConfiguration={subnets=[${{ env.VPC_SUBNETS }}],securityGroups=[${{ env.SECURITY_GROUP }}],assignPublicIp=DISABLED}" \
-              --load-balancers targetGroupArn=${{ env.FRONTEND_TG_ARN }},containerName=frontend,containerPort=3000 \
-              --region ${{ env.AWS_REGION }}
+              --network-configuration "awsvpcConfiguration={subnets=[${VPC_SUBNETS//,/ }],securityGroups=[$SECURITY_GROUP],assignPublicIp=DISABLED}" \
+              --load-balancers "targetGroupArn=$FRONTEND_TG_ARN,containerName=frontend,containerPort=3000" \
+              --region $AWS_REGION
           fi
+      
+          # Verify service deployment
+          echo "Waiting for service to stabilize..."
+          aws ecs wait services-stable \
+            --cluster $CLUSTER_NAME \
+            --services node-frontend-service \
+            --region $AWS_REGION
+          echo "Frontend service deployment complete!"
