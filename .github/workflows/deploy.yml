@@ -40,10 +40,10 @@ jobs:
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      # - name: Build, Tag, and Push Images
-      #   run: |
-      #     docker compose build
-      #     docker compose push
+      - name: Build, Tag, and Push Images
+        run: |
+          docker compose build
+          docker compose push
 
       - name: Deploy Backend Service
         run: |
