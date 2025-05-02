@@ -18,8 +18,8 @@ env:
   VPC_SUBNETS: vpc-017328606a774e563  # Replace with your subnet IDs
   SECURITY_GROUP: sg-08721e8cd1e5d3851  # Replace with your security group ID
   ALB_SECURITY_GROUP: sg-0d3c32d2679d29ef6  # Replace with your ALB security group ID
-  BACKEND_TG_ARN: arn:aws:elasticloadbalancing:eu-north-1:354918374652:targetgroup/FastAPI-test-backend/7528d3dd3d269edc
-  FRONTEND_TG_ARN: arn:aws:elasticloadbalancing:eu-north-1:354918374652:targetgroup/FastApi-test-frontend/1a75e9a7e2881e8e
+  BACKEND_TG_ARN: arn:aws:elasticloadbalancing:eu-north-1:354918374652:targetgroup/APP-backend/22b79997edea2035
+  FRONTEND_TG_ARN: arn:aws:elasticloadbalancing:eu-north-1:354918374652:targetgroup/APP-frontend/8149c379351b7eb5
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
