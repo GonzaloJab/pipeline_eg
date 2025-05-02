@@ -11,7 +11,7 @@ app.get('/health', (req, res) => {
   res.json({ status: 'healthy' });
 });
 
-const API_URL = 'http://localhost:8000/tasks';  // Connect to FastAPI service by service name
+const API_URL = '/api';  // Connect to FastAPI service by service name
 
 async function fetchTasks() {
   const res = await fetch(API_URL);
