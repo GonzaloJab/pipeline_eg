@@ -1,18 +1,22 @@
 # Use Node.js base image
-FROM node:16-slim
+FROM node:18-slim
 
 # Set the working directory
 WORKDIR /app
 
-# Copy package.json and install dependencies
-COPY frontend/package.json .
+# Copy package.json and package-lock.json (if present) and install dependencies
+COPY package.json ./
+COPY package-lock.json ./
 RUN npm install
 
-# Copy the rest of the frontend code
-COPY frontend/ .
+# Copy the rest of the application
+COPY . .
 
-# Expose the port for the frontend
+# Build the Next.js app
+RUN npm run build
+
+# Expose the port Next.js uses
 EXPOSE 3000
 
-# Start the Node.js server
-CMD ["node", "server.js"]
+# Start the Next.js server
+CMD ["npm", "start"]

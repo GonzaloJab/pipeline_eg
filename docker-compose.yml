@@ -13,8 +13,8 @@ services:
 
   frontend:
     build:
-      context: .
-      dockerfile: frontend/Dockerfile
+      context: ./frontend
+      dockerfile: Dockerfile
     image: ${ECR_REGISTRY}/testing/fast_api:frontend-${IMAGE_TAG}  # Single repository with unique tag
     container_name: node-frontend
     ports:
