@@ -3,7 +3,7 @@ import React from 'react';
 
 export default function TrainingForm({ formData, handleChange, handleSubmit }) {
   return (
-    <form onSubmit={handleSubmit} className="flex items-center justify-center p-12">
+    <form onSubmit={handleSubmit} className="container max-w-screen-lg mx-auto">
       
         {/* General Information */}
 

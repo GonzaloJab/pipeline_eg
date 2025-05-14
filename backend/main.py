@@ -16,17 +16,19 @@ import paramiko
 from contextlib import asynccontextmanager, suppress
 
 # Load .env file from the parent directory
-load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'),override=True)
 
 # Constants
 LOG_PATH = os.getenv("LOG_PATH", "/media/isend/ssd_storage/1_EYES_TRAIN/remote_runs/logs")
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "None").split(",")
+ALLOWED_ORIGINS = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "").split(",") if origin.strip()]
 SSH_HOST = os.getenv("SSH_HOST")
 SSH_USER = os.getenv("SSH_USER")
 SSH_KEY = os.getenv("SSH_PRIVATE_KEY_PATH")
 CONDA_HOOK = "/home/isend/anaconda3/bin/conda shell.bash hook"
 CONDA_ENV = os.getenv("CONDA_ENV", "YOLO")
 WORKING_DIR= os.getenv("WORKING_DIR", "/media/isend/ssd_storage/1_EYES_TRAIN/remote_runs")
+
+print(f"Allowed origins: {ALLOWED_ORIGINS}")
 
 # FastAPI app
 app = FastAPI()

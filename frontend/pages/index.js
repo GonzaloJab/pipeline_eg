@@ -27,6 +27,7 @@ export default function Home() {
   });
 
   useEffect(() => {
+    console.log("API URL:", process.env.NEXT_PUBLIC_API_URL);
     fetchTasks();
     const interval = setInterval(fetchTasks, 20000); // every 20 seconds
     return () => clearInterval(interval); // cleanup
@@ -114,7 +115,7 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen p-6 bg-gray-100 flex items-center justify-center">
+    <div className="container max-w-screen-lg mx-auto">
       <h1 className="text-2xl font-bold mb-6 text-gray-800">Training Tasks</h1>
       <TrainingForm
         formData={formData}
