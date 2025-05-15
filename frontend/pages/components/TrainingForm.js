@@ -9,13 +9,11 @@ export default function TrainingForm({ formData, handleChange, handleSubmit }) {
       className="max-w-screen-lg mx-auto p-6 bg-white shadow-md rounded-md"
     >
       {/* General Section */}
-      <h2 className="text-2xl font-semibold text-gray-800 mb-4">
-        General Information
-      </h2>
+      
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <div className="space-y-1">
           <label className="block text-sm font-medium text-gray-700">
-            Task Name
+            Nombre tarea
           </label>
           <input
             type="text"
@@ -28,7 +26,7 @@ export default function TrainingForm({ formData, handleChange, handleSubmit }) {
         </div>
         <div className="space-y-1">
           <label className="block text-sm font-medium text-gray-700">
-            Model
+            Modelo
           </label>
           <select
             value={formData.model}
@@ -43,7 +41,7 @@ export default function TrainingForm({ formData, handleChange, handleSubmit }) {
         </div>
         <div className="space-y-1">
           <label className="block text-sm font-medium text-gray-700">
-            Weights
+            Pesos
           </label>
           <input
             type="text"
@@ -57,12 +55,12 @@ export default function TrainingForm({ formData, handleChange, handleSubmit }) {
 
       {/* File Paths Section */}
       <h2 className="text-2xl font-semibold text-gray-800 mb-4">
-        File Paths
+        Rutas de archivos
       </h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
         <div className="space-y-1">
           <label className="block text-sm font-medium text-gray-700">
-            Data In
+            Imágenes:
           </label>
           <input
             type="text"
@@ -75,7 +73,7 @@ export default function TrainingForm({ formData, handleChange, handleSubmit }) {
         </div>
         <div className="space-y-1">
           <label className="block text-sm font-medium text-gray-700">
-            Output Directory
+            Guardar en:
           </label>
           <input
             type="text"
@@ -90,7 +88,7 @@ export default function TrainingForm({ formData, handleChange, handleSubmit }) {
 
       {/* Training Settings Section */}
       <h2 className="text-2xl font-semibold text-gray-800 mb-4">
-        Training Settings
+        Hiperparámetros
       </h2>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
         {/* Each input for settings can use similar styling */}
@@ -157,7 +155,7 @@ export default function TrainingForm({ formData, handleChange, handleSubmit }) {
 
       <div className="mt-6">
         <Button
-          variant="outline"
+          variant="default"
           type="submit"
           className="w-full bg-red-500 text-white py-2 rounded-md hover:bg-red-600"
         >

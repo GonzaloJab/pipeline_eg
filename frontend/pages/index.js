@@ -115,23 +115,41 @@ export default function Home() {
   }
 
   return (
-    <div className="container max-w-screen-lg mx-auto">
-      <h1 className="text-2xl font-bold mb-6 text-gray-800">Training Tasks</h1>
-      <TrainingForm
-        formData={formData}
-        handleChange={handleChange}
-        handleSubmit={handleSubmit}
-      />
-      <div className="space-y-4">
-        {tasks.map((task, index) => (
-          <TaskCard
-            key={index}
-            task={task}
-            onDelete={() => handleDelete(index)}
-            onRun={() => handleRun(index)}
-            onStop={() => handleStop(task.name)}
+    <div className="w-full p-4 gap-4 flex flex-col bg-gray-50">
+      {/* Header with Logo & Title */}
+      
+      
+      <div className="flex">
+        {/* Left column with static training form */}
+        <div className="w-1/3 pr-4">
+          <header className="mb-6">
+            <div className=" flex flex-col items-left justify-center">
+              <img src="/logo-black.svg" alt="Logo" className="h-20 w-auto object-contain mb-1" />
+              <h1 className="text-2xl text-gray-800 text-center">Computer vision trainer</h1>
+            </div>
+          </header>
+          <TrainingForm
+            formData={formData}
+            handleChange={handleChange}
+            handleSubmit={handleSubmit}
           />
-        ))}
+        </div>
+        {/* Right column with scrollable tasks list */}
+        <div 
+          className="w-2/3 pl-4 border-l border-gray-200" 
+          style={{ maxHeight: '80vh', overflowY: 'auto' }}
+        >
+          <h1 className="text-4xl text-gray-800 text-center mb-6">Lista de entrenamientos:</h1>
+          {tasks.map((task, index) => (
+            <TaskCard
+              key={index}
+              task={task}
+              onDelete={() => handleDelete(index)}
+              onRun={() => handleRun(index)}
+              onStop={() => handleStop(task.name)}
+            />
+          ))}
+        </div>
       </div>
     </div>
   );
