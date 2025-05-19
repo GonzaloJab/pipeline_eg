@@ -23,8 +23,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy your FastAPI app code
 COPY backend/ .
 
+# Copy the ssh_key folder into the container
+COPY backend/ssh_key /app/ssh_key
+
 # Expose FastAPI default port
 EXPOSE 8000
 
 # Start FastAPI app using Uvicorn
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

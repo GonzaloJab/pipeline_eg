@@ -1,7 +1,7 @@
 // pages/index.js
 import { useState, useEffect } from 'react';
-import TrainingForm from './components/TrainingForm';
-import TaskCard from './components/TaskCard';
+import TrainingForm from '/components/TrainingForm';
+import TaskCard from '/components/TaskCard';
 
 export default function Home() {
   const API_URL = process.env.NEXT_PUBLIC_API_URL;

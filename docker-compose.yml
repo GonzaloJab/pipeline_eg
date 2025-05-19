@@ -3,11 +3,16 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-
-    image: ${ECR_REGISTRY}/testing/fast_api:backend-${IMAGE_TAG}  # Single repository with unique tags
+    image: backend-${IMAGE_TAG}
     container_name: fastapi-backend
     ports:
       - "8000:8000"
+    volumes:
+      - ./backend/ssh_key:/app/ssh_key   # Mount the key folder into the container
+    environment:
+      - SSH_PRIVATE_KEY_PATH=/app/ssh_key/fastapi_rsa
+    env_file:
+      - .env
     networks:
       - task-network
 
@@ -15,8 +20,12 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    image: ${ECR_REGISTRY}/testing/fast_api:frontend-${IMAGE_TAG}  # Single repository with unique tag
+      args:
+        NEXT_PUBLIC_API_URL: "http://172.26.7.10:8000/trains"
+    image: frontend-${IMAGE_TAG}  # Single repository with unique tag
     container_name: node-frontend
+    environment:
+      - NEXT_PUBLIC_API_URL=http://172.26.7.10:8000/trains
     ports:
       - "3000:3000"
     depends_on:

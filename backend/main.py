@@ -35,8 +35,8 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
+    allow_origins=["*"],#ALLOWED_ORIGINS,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -104,7 +104,7 @@ async def run_remote_training(task: TrainingTask):
         if task.name not in running_tasks:
             running_tasks.append(task.name)
     except Exception as e:
-        print(f"SSH command failed: {e}")
+        print(f"SSH command failed: {e}_PARAMS:: IP:{SSH_HOST} USER:{SSH_USER}")
 # Get task statuses
 async def get_task_statuses():
     statuses = {}

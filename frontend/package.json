@@ -9,6 +9,7 @@
   "dependencies": {
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "dotenv": "^16.5.0",
     "lucide-react": "^0.510.0",
     "next": "latest",
     "react": "latest",
