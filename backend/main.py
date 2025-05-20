@@ -27,6 +27,7 @@ SSH_KEY = os.getenv("SSH_PRIVATE_KEY_PATH")
 CONDA_HOOK = "/home/isend/anaconda3/bin/conda shell.bash hook"
 CONDA_ENV = os.getenv("CONDA_ENV", "YOLO")
 WORKING_DIR= os.getenv("WORKING_DIR", "/media/isend/ssd_storage/1_EYES_TRAIN/remote_runs")
+CSV_DATASETS_FOLDER= os.getenv("CSV_DATASETS_FOLDER", "/media/isend/ssd_storage/1_EYES_TRAIN/datasets")
 
 print(f"Allowed origins: {ALLOWED_ORIGINS}")
 
@@ -180,6 +181,22 @@ def determine_task_status(task_name: str) -> str:
         return "unknown"
 
 
+@app.on_event("startup")
+async def start_tensorboard():
+    try:
+        key = paramiko.RSAKey.from_private_key_file(SSH_KEY)
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(SSH_HOST, username=SSH_USER, pkey=key)
+        # Run tensorboard in background. Adjust the log file path as needed.
+        command = (
+            "nohup tensorboard --logdir=/media/isend/ssd_storage/1_EYES_TRAIN/runs --bind_all > /tmp/tensorboard.log 2>&1 &"
+        )
+        ssh.exec_command(command)
+        ssh.close()
+        print("TensorBoard started on remote server.")
+    except Exception as e:
+        print(f"Failed to start TensorBoard: {e}")
 
 @app.post("/trains/stop/{task_name}")
 async def stop_task(task_name: str):
@@ -324,3 +341,29 @@ async def delete_task(task_id: int):
     if task_id < 0 or task_id >= len(tasks):
         raise HTTPException(status_code=404, detail="Task not found")
     return tasks.pop(task_id)
+
+@app.get("/csv-files", response_model=List[str])
+async def get_csv_files():
+    """
+    Connect via SSH to list CSV files in the remote CSV_FOLDER.
+    """
+    try:
+        key = paramiko.RSAKey.from_private_key_file(SSH_KEY)
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(SSH_HOST, username=SSH_USER, pkey=key)
+        
+        command = f"ls -1 {CSV_DATASETS_FOLDER}*.csv"
+        # print(f"Executing command: {command}")
+        stdin, stdout, stderr = ssh.exec_command(command)
+        files_output = stdout.read().decode('utf-8').strip()
+        ssh.close()
+        # print(f"Command output: {files_output}")
+        
+        if files_output:
+            files = [os.path.basename(f) for f in files_output.splitlines()]
+        else:
+            files = []
+        return files
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list CSV files: {e}")
