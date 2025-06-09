@@ -5,49 +5,175 @@
 import os
 import asyncio
 from datetime import datetime
-from typing import List
+from typing import List, Dict
+import time
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 import paramiko
 from contextlib import asynccontextmanager, suppress
+
+from functions.create_db import (
+    update_db, 
+    get_db_versions, 
+    create_db, 
+    create_dataset_csv,
+    get_unique_labels
+)
 
 # Load .env file from the parent directory
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'),override=True)
 
 # Constants
 LOG_PATH = os.getenv("LOG_PATH", "/media/isend/ssd_storage/1_EYES_TRAIN/remote_runs/logs")
-ALLOWED_ORIGINS = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "").split(",") if origin.strip()]
+
+# Make CORS more permissive
+ALLOWED_ORIGINS = ["*"]
+
+'''
+Previous CORS config was too permissive
+'''
 SSH_HOST = os.getenv("SSH_HOST")
 SSH_USER = os.getenv("SSH_USER")
 SSH_KEY = os.getenv("SSH_PRIVATE_KEY_PATH")
 CONDA_HOOK = "/home/isend/anaconda3/bin/conda shell.bash hook"
 CONDA_ENV = os.getenv("CONDA_ENV", "YOLO")
-WORKING_DIR= os.getenv("WORKING_DIR", "/media/isend/ssd_storage/1_EYES_TRAIN/remote_runs")
-CSV_DATASETS_FOLDER= os.getenv("CSV_DATASETS_FOLDER", "/media/isend/ssd_storage/1_EYES_TRAIN/datasets")
+WORKING_DIR = os.getenv("WORKING_DIR", "/media/isend/ssd_storage/1_EYES_TRAIN")
+CSV_DATASETS_FOLDER = os.getenv("CSV_DATASETS_FOLDER", "/media/isend/ssd_storage/1_EYES_TRAIN/datasets")
+DB_PATH = os.getenv("DB_PATH", "ISEND_images.db")
+DB_DIR = os.getenv("DB_DIR", "/media/isend/ssd_storage/1_EYES_TRAIN/databases")  # New constant for database directory
+
+# Make sure the database directory exists
+os.makedirs(DB_DIR, exist_ok=True)
 
 print(f"Allowed origins: {ALLOWED_ORIGINS}")
+#print(f"Database path: {DB_FULL_PATH}")
+print(f"CSV datasets folder: {CSV_DATASETS_FOLDER}")
 
-# FastAPI app
-app = FastAPI()
+# FastAPI app with lifespan
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    print("Starting up the application...")
+    '''
+    try:
+        # Initialize database
+        create_db(DB_FULL_PATH)
+        print(f"Database initialized at {DB_FULL_PATH}")
+    except Exception as e:
+        print(f"Error initializing database: {e}")
+    '''
+    # Start MLflow server in a separate try block
+    try:
+        key = paramiko.RSAKey.from_private_key_file(SSH_KEY)
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(SSH_HOST, username=SSH_USER, pkey=key)
 
+        print("Connected to remote server, checking conda environment...")
+
+        # Kill any existing MLflow processes
+        ssh.exec_command("pkill -f 'mlflow server'")
+        print("Cleaned up any existing MLflow processes")
+
+        # Define MLflow paths
+        mlflow_tracking_uri = os.path.join(WORKING_DIR, "mlruns")
+        mlflow_artifacts = os.path.join(WORKING_DIR, "mlartifacts")
+
+        # Ensure directories exist
+        mkdir_cmd = f"mkdir -p {mlflow_tracking_uri} {mlflow_artifacts}"
+        ssh.exec_command(mkdir_cmd)
+
+        # Start MLflow server with conda environment - using screen to properly detach
+        # First, ensure screen is installed
+        ssh.exec_command("command -v screen || sudo apt-get install screen -y")
+        
+        # Create a script to run MLflow
+        mlflow_script = (
+            f"source ~/anaconda3/etc/profile.d/conda.sh\n"
+            f"conda activate {CONDA_ENV}\n"
+            f"cd {WORKING_DIR}\n"
+            f"mlflow server "
+            f"--host 0.0.0.0 "
+            f"--port 8080 "
+            f"--backend-store-uri {mlflow_tracking_uri} "
+            f"--default-artifact-root {mlflow_artifacts}"
+        )
+        
+        # Write the script to a file
+        script_path = "/tmp/start_mlflow.sh"
+        ssh.exec_command(f"echo '{mlflow_script}' > {script_path} && chmod +x {script_path}")
+
+        # Start MLflow in a detached screen session
+        screen_cmd = (
+            f"screen -dmS mlflow bash -c '{script_path}'"
+        )
+
+        print("Starting MLflow server in detached screen session...")
+        ssh.exec_command(screen_cmd)
+
+        # Give it a moment to start
+        time.sleep(2)
+
+        # Verify it's running
+        _, stdout, _ = ssh.exec_command("screen -ls | grep mlflow")
+        if stdout.read().decode():
+            print("MLflow server started successfully in screen session")
+        else:
+            print("Warning: MLflow screen session not found")
+
+    except Exception as e:
+        print(f"Failed to start MLflow server: {e}")
+    finally:
+        if 'ssh' in locals():
+            ssh.close()
+
+    # Start the background task worker
+    task = asyncio.create_task(worker())
+    
+    yield  # This is where the application runs
+    
+    # Shutdown
+    print("Shutting down the application...")
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
+
+# Create the FastAPI app with lifespan
+app = FastAPI(lifespan=lifespan)
+
+# Configure CORS - simplified and permissive configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],#ALLOWED_ORIGINS,
-    allow_credentials=False,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=False,  # Changed to False since we're using "*"
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add error handling middleware
+@app.middleware("http")
+async def add_error_handling(request: Request, call_next):
+    try:
+        response = await call_next(request)
+        return response
+    except Exception as e:
+        print(f"Error handling request: {str(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={"detail": str(e)}
+        )
 
 # Models
 class TrainingTask(BaseModel):
     name: str
     model: str
     weights: str
-    data_in: str = Field(..., alias="dataIn")
+    datasetType: str
+    selectedDatabase: str  # New field for selected database
     output_directory: str = Field(..., alias="outputDirectory")
     batch_size: int = Field(..., alias="batchSize")
     epochs: int
@@ -61,6 +187,8 @@ class TrainingTask(BaseModel):
     num_workers: int = Field(..., alias="numWorkers")
     prefetch_factor: int = Field(..., alias="prefetchFactor")
     submitted_at: datetime = None
+    train_csv: str = None
+    val_csv: str = None
 
     class Config:
         allow_population_by_field_name = True
@@ -70,42 +198,96 @@ class TrainingTask(BaseModel):
 tasks: List[TrainingTask] = []
 task_queue = asyncio.Queue()
 running_tasks: List[str] = []
+task_names: set = set()  # Store all task names
 
 # Run command via SSH
 async def run_remote_training(task: TrainingTask):
     log_path = os.path.join(LOG_PATH, f"train_{task.name}.log")
     pid_path = os.path.join(LOG_PATH, f"train_{task.name}.pid")
 
-    python_cmd = (
-    # CHANGE WORKING DIRECTORY
-        f"cd {WORKING_DIR} && "    
-    # RUN SCRIPT    
-        f"nohup python /media/isend/ssd_storage/1_EYES_TRAIN/train.py "
-        f"--model {task.model} --weights {task.weights} "
-        f"--data_in \"{task.data_in}\" --output_dir \"{task.output_directory}\" "
-        f"--batch_size {task.batch_size} --epochs {task.epochs} --lr {task.lr} "
-        f"--exp_LR_decrease_factor {task.exp_lr_decrease_factor} --step_size {task.step_size} "
-        f"--gamma {task.gamma} --solver {task.solver} --momentum {task.momentum} "
-        f"--weight_decay {task.weight_decay} --num_workers {task.num_workers} "
-        f"--unfreeze_index {9} "
-        f"--prefetch_factor {task.prefetch_factor} > \"{log_path}\" 2>&1 & "
-        f"echo $! > \"{pid_path}\""
-        #f"sleep 2 && ps -eo pid,cmd | grep '[p]ython.*train.py' | awk '{{print $1}}' > \"{pid_path}\""
-    )
-
-    full_cmd = f"bash -l -c 'eval \"$({CONDA_HOOK})\" && conda activate {CONDA_ENV} && {python_cmd} '"
-    print(f"Executing command: {full_cmd}")
+    # Create dataset CSVs locally first
     try:
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        local_train_csv = os.path.join("temp", f'train_{task.name}_{timestamp}.csv')
+        local_val_csv = os.path.join("temp", f'val_{task.name}_{timestamp}.csv')
+        
+        # Ensure local temp directory exists
+        os.makedirs("temp", exist_ok=True)
+        
+        # Create the datasets locally
+        train_csv, val_csv = create_dataset_csv(
+            task.selectedDatabase,  # Use selected database
+            "temp",  # Local temp directory
+            dataset_type=task.datasetType,
+            train_path=local_train_csv,
+            val_path=local_val_csv
+        )
+
+        # Setup SSH and SFTP connection
         key = paramiko.RSAKey.from_private_key_file(SSH_KEY)
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         ssh.connect(SSH_HOST, username=SSH_USER, pkey=key)
+        sftp = ssh.open_sftp()
+
+        # Create remote paths
+        remote_train_csv = os.path.join(CSV_DATASETS_FOLDER, f'train_{task.name}_{timestamp}.csv')
+        remote_val_csv = os.path.join(CSV_DATASETS_FOLDER, f'val_{task.name}_{timestamp}.csv')
+
+        # Create remote directory if it doesn't exist
+        try:
+            sftp.mkdir(CSV_DATASETS_FOLDER)
+        except IOError:
+            pass  # Directory already exists
+
+        # Transfer the files
+        print(f"Transferring CSV files to remote machine...")
+        sftp.put(local_train_csv, remote_train_csv)
+        sftp.put(local_val_csv, remote_val_csv)
+        print(f"Files transferred successfully")
+
+        # Store the remote CSV paths in the task
+        task.train_csv = remote_train_csv
+        task.val_csv = remote_val_csv
+
+        # Run the training command
+        python_cmd = (
+            f"cd {WORKING_DIR} && "    
+            f"nohup python /media/isend/ssd_storage/1_EYES_TRAIN/train.py "
+            f"--training_name {task.name} "
+            f"--model {task.model} --weights {task.weights} "
+            f"--train_dataset \"{remote_train_csv}\" "
+            f"--val_dataset \"{remote_val_csv}\" "
+            f"--output_dir \"{task.output_directory}\" "
+            f"--batch_size {task.batch_size} --epochs {task.epochs} --lr {task.lr} "
+            f"--exp_LR_decrease_factor {task.exp_lr_decrease_factor} --step_size {task.step_size} "
+            f"--gamma {task.gamma} --solver {task.solver} --momentum {task.momentum} "
+            f"--weight_decay {task.weight_decay} --num_workers {task.num_workers} "
+            f"--unfreeze_index {9} "
+            f"--prefetch_factor {task.prefetch_factor} > \"{log_path}\" 2>&1 & "
+            f"echo $! > \"{pid_path}\""
+        )
+
+        full_cmd = f"bash -l -c 'eval \"$({CONDA_HOOK})\" && conda activate {CONDA_ENV} && {python_cmd} '"
+        print(f"Executing command: {full_cmd}")
+        
         ssh.exec_command(full_cmd)
-        ssh.close()
         if task.name not in running_tasks:
             running_tasks.append(task.name)
+
+        # Clean up local files
+        os.remove(local_train_csv)
+        os.remove(local_val_csv)
+
     except Exception as e:
-        print(f"SSH command failed: {e}_PARAMS:: IP:{SSH_HOST} USER:{SSH_USER}")
+        print(f"Error during task execution: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if 'sftp' in locals():
+            sftp.close()
+        if 'ssh' in locals():
+            ssh.close()
+
 # Get task statuses
 async def get_task_statuses():
     statuses = {}
@@ -179,24 +361,6 @@ def determine_task_status(task_name: str) -> str:
     except Exception as e:
         print(f"Status check failed: {e}")
         return "unknown"
-
-
-@app.on_event("startup")
-async def start_tensorboard():
-    try:
-        key = paramiko.RSAKey.from_private_key_file(SSH_KEY)
-        ssh = paramiko.SSHClient()
-        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        ssh.connect(SSH_HOST, username=SSH_USER, pkey=key)
-        # Run tensorboard in background. Adjust the log file path as needed.
-        command = (
-            "nohup tensorboard --logdir=/media/isend/ssd_storage/1_EYES_TRAIN/runs --bind_all > /tmp/tensorboard.log 2>&1 &"
-        )
-        ssh.exec_command(command)
-        ssh.close()
-        print("TensorBoard started on remote server.")
-    except Exception as e:
-        print(f"Failed to start TensorBoard: {e}")
 
 @app.post("/trains/stop/{task_name}")
 async def stop_task(task_name: str):
@@ -288,31 +452,23 @@ async def worker():
         await run_remote_training(task)
         task_queue.task_done()
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    task = asyncio.create_task(worker())
-    try:
-        yield
-    finally:
-        task.cancel()
-        with suppress(asyncio.CancelledError):
-            await task
-
-app.router.lifespan_context = lifespan
-
 @app.get("/health")
 async def healthcheck():
     return {"status": "healthy"}
 
 @app.get("/trains", response_model=List[dict])
 async def get_tasks():
-    result = []
-    for task in tasks:
-        status = determine_task_status(task.name)
-        task_dict = task.dict(by_alias=True)
-        task_dict["status"] = status
-        result.append(task_dict)
-    return result
+    try:
+        result = []
+        for task in tasks:
+            status = determine_task_status(task.name)
+            task_dict = task.dict(by_alias=True)
+            task_dict["status"] = status
+            result.append(task_dict)
+        return result
+    except Exception as e:
+        print(f"Error in get_tasks: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/trains/queue")
 async def get_queued_tasks():
@@ -324,8 +480,18 @@ async def get_running_tasks():
 
 @app.post("/trains", response_model=TrainingTask)
 async def create_task(task: TrainingTask):
+    # Check if task name already exists
+    if task.name in task_names:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Task name '{task.name}' already exists. Please choose a different name."
+        )
+    
     if task.submitted_at is None:
         task.submitted_at = datetime.utcnow()
+    
+    # Add task name to set and task to list
+    task_names.add(task.name)
     tasks.append(task)
     return task
 
@@ -340,6 +506,46 @@ async def run_task(task_id: int):
 async def delete_task(task_id: int):
     if task_id < 0 or task_id >= len(tasks):
         raise HTTPException(status_code=404, detail="Task not found")
+    
+    task = tasks[task_id]
+    
+    try:
+        # Connect to remote machine
+        key = paramiko.RSAKey.from_private_key_file(SSH_KEY)
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(SSH_HOST, username=SSH_USER, pkey=key)
+        
+        # Files to clean up
+        files_to_remove = [
+            os.path.join(LOG_PATH, f"train_{task.name}.log"),
+            os.path.join(LOG_PATH, f"train_{task.name}.pid")
+        ]
+        
+        # Add CSV files if they exist in the task
+        if hasattr(task, 'train_csv') and task.train_csv:
+            files_to_remove.append(task.train_csv)
+        if hasattr(task, 'val_csv') and task.val_csv:
+            files_to_remove.append(task.val_csv)
+            
+        # Remove files
+        for file_path in files_to_remove:
+            cmd = f"rm -f '{file_path}'"
+            ssh.exec_command(cmd)
+            print(f"Removing file: {file_path}")
+        
+        # If task is in running_tasks list, remove it
+        if task.name in running_tasks:
+            running_tasks.remove(task.name)
+            
+    except Exception as e:
+        print(f"Error cleaning up files: {e}")
+    finally:
+        if 'ssh' in locals():
+            ssh.close()
+    
+    # Remove task name from set and task from list
+    task_names.remove(task.name)
     return tasks.pop(task_id)
 
 @app.get("/csv-files", response_model=List[str])
@@ -367,3 +573,79 @@ async def get_csv_files():
         return files
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list CSV files: {e}")
+    
+
+@app.post("/refresh-database")
+async def refresh_database():
+    """
+    Refresh the database by scanning the image directories and creating a new version.
+    Previous versions are preserved. Only creates a new version if changes are detected.
+    """
+    try:
+        # Create timestamp with correct format
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M')
+        new_db_path = os.path.join(DB_DIR, f"{timestamp}_train.db")
+        
+        # Create and update the database
+        final_path, was_updated = update_db(new_db_path)
+        
+        if was_updated:
+            return {
+                "message": "Database refreshed successfully with new changes",
+                "path": final_path,
+                "status": "updated"
+            }
+        else:
+            return {
+                "message": "Database is already up to date - no changes detected",
+                "path": final_path,
+                "status": "unchanged"
+            }
+            
+    except Exception as e:
+        print(f"Failed to refresh database: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to refresh database: {str(e)}")
+
+@app.get("/database/versions")
+async def get_database_versions():
+    """
+    Get all available database files from the DB_DIR directory.
+    """
+    try:
+        db_files = []
+        for file in os.listdir(DB_DIR):
+            if file.endswith('.db'):
+                file_path = os.path.join(DB_DIR, file)
+                stats = os.stat(file_path)
+                is_current = (os.path.realpath(os.path.join(DB_DIR, DB_PATH)) == 
+                            os.path.realpath(file_path)) if os.path.exists(os.path.join(DB_DIR, DB_PATH)) else False
+                
+                db_files.append({
+                    "filename": file,
+                    "path": file_path,
+                    "created_at": datetime.fromtimestamp(stats.st_ctime).isoformat(),
+                    "is_current": is_current
+                })
+        
+        # Sort by creation time, newest first
+        db_files.sort(key=lambda x: x["created_at"], reverse=True)
+        return db_files
+    except Exception as e:
+        print(f"Error in get_database_versions: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/database/labels")
+async def get_available_labels():
+    """
+    Get all available unique labels for each label column in the current version.
+    """
+    try:
+        labels = get_unique_labels(DB_FULL_PATH)
+        return labels
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get labels: {str(e)}")
+
+@app.get("/trains/names")
+async def get_task_names():
+    return {"names": list(task_names)}
+

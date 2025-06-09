@@ -87,6 +87,9 @@ export default function TaskCard({ task, onDelete, onRun, onStop }) {
             <td className="p-1">Modelo: {task.model} | Weights: {task.weights}</td>
           </tr>
           <tr className="border-b">
+            <td className="p-1">Dataset Type: {task.datasetType}</td>
+          </tr>
+          <tr className="border-b">
             <td className="p-1">Batch Size: {task.batchSize} | Epochs: {task.epochs} | Learning Rate: {task.lr} | Exp LR Factor: {task.exp_LR_decrease_factor}</td>
           </tr>
          

@@ -1,17 +1,25 @@
 // pages/index.js
 import { useState, useEffect } from 'react';
-import TrainingForm from '/components/TrainingForm';
-import TaskCard from '/components/TaskCard';
+import TrainingForm from '../components/TrainingForm';
+import TaskCard from '../components/TaskCard';
 import Link from 'next/link';
+import Button from '../components/ui/Button';
 
 export default function Home() {
-  const API_URL = process.env.NEXT_PUBLIC_API_URL;
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/trains';
+  const API_BASE_URL = API_URL.replace(/\/trains$/, '');
 
   const [tasks, setTasks] = useState([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [dbVersions, setDbVersions] = useState([]);
+  const [showVersions, setShowVersions] = useState(false);
+  const [error, setError] = useState(null);
   const [formData, setFormData] = useState({
     name: '',
     model: 'PvsM',
     weights: 'DEFAULT',
+    datasetType: '',
+    selectedDatabase: '',
     dataIn: '/media/isend/nas/PHOTO_BANK/3_SAVED_DATASETS/data_out_230712.8 - PvsM',
     outputDirectory: '/media/isend/ssd_storage/1_EYES_TRAIN/outputs/',
     batchSize: '16',
@@ -29,29 +37,53 @@ export default function Home() {
   });
 
   useEffect(() => {
-    console.log("API URL:", process.env.NEXT_PUBLIC_API_URL);
+    console.log("API URL:", API_URL);
+    console.log("API Base URL:", API_BASE_URL);
     fetchTasks();
-    const interval = setInterval(fetchTasks, 20000); // every 20 seconds
-    return () => clearInterval(interval); // cleanup
+    fetchDbVersions();
+    const interval = setInterval(fetchTasks, 20000);
+    return () => clearInterval(interval);
   }, []);
+
+  const fetchDbVersions = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/database/versions`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const versions = await response.json();
+      setDbVersions(versions);
+      setError(null);
+    } catch (error) {
+      console.error('Error fetching database versions:', error);
+      setError('Failed to fetch database versions. Please check if the backend server is running.');
+    }
+  };
 
   const fetchTasks = async () => {
     try {
       const res = await fetch(API_URL);
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
       const data = await res.json();
   
       const runningRes = await fetch(`${API_URL}/running`);
+      if (!runningRes.ok) {
+        throw new Error(`HTTP error! status: ${runningRes.status}`);
+      }
       const runningNames = await runningRes.json();
   
-      // Mark tasks as running based on the `/running` endpoint
       const withStatus = data.map(task => ({
         ...task,
         isRunning: runningNames.includes(task.name),
       }));
   
       setTasks(withStatus);
+      setError(null);
     } catch (error) {
       console.error('Error fetching tasks:', error);
+      setError('Failed to fetch tasks. Please check if the backend server is running.');
     }
   };
   
@@ -112,20 +144,67 @@ export default function Home() {
     }
   }
 
+  const handleRefreshDatabase = async () => {
+    try {
+      setIsRefreshing(true);
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL.replace(/\/trains$/, '');
+      const response = await fetch(`${baseUrl}/refresh-database`, {
+        method: 'POST',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to refresh database');
+      }
+      
+      // Refresh both tasks and database versions
+      await Promise.all([fetchTasks(), fetchDbVersions()]);
+    } catch (error) {
+      console.error('Error refreshing database:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   return (
     <div className="w-full p-4 gap-4 flex flex-col bg-gray-50">
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+          <strong className="font-bold">Error!</strong>
+          <span className="block sm:inline"> {error}</span>
+        </div>
+      )}
       {/* Header with Logo & Title */}
       <div className="flex">
         {/* Left column with static training form */}
         <div className="w-2/5 pr-4">
-        <header className="mb-6 items-center gap-4">
-          {/* Left Column: Logo & Title */}
-          <div className="flex flex-col items-center">
-            <img src="/logo-black.svg" alt="Logo" className="h-20 w-auto object-contain mb-1" />
-            <h1 className="text-2xl text-gray-800">Computer vision trainer</h1>
-          </div>
-          
-        </header>
+          <header className="mb-6 items-center gap-4">
+            {/* Left Column: Logo & Title */}
+            <div className="flex flex-col items-center">
+              <img src="/logo-black.svg" alt="Logo" className="h-20 w-auto object-contain mb-1" />
+              <h1 className="text-2xl text-gray-800">Computer vision trainer</h1>
+              <div className="flex flex-col items-center gap-2">
+                <Button
+                  onClick={handleRefreshDatabase}
+                  disabled={isRefreshing}
+                  className="mt-4"
+                  variant="secondary"
+                >
+                  {isRefreshing ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-gray-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                      </svg>
+                      Refreshing...
+                    </>
+                  ) : (
+                    'Refresh Database'
+                  )}
+                </Button>
+                
+              </div>
+            </div>
+          </header>
           <TrainingForm
             formData={formData}
             handleChange={handleChange}
@@ -146,7 +225,7 @@ export default function Home() {
               rel="noopener noreferrer"
               className="flex flex-col items-center"
             >
-              <img src="/tensorflow.svg" alt="TensorFlow" className="h-10 w-auto object-contain" />
+              <img src="/MLflow.svg" alt="MLFlow" className="h-10 w-auto object-contain" />
             </Link>
           </div>
           <h1 className="text-4xl text-gray-800 text-center mb-6">Lista de entrenamientos:</h1>
@@ -161,6 +240,43 @@ export default function Home() {
           ))}
         </div>
       </div>
+
+      {/* Database Versions Dialog */}
+      {showVersions && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold">Database Version History</h2>
+              <button
+                onClick={() => setShowVersions(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ×
+              </button>
+            </div>
+            <div className="max-h-96 overflow-y-auto">
+              {dbVersions.map((version, index) => (
+                <div
+                  key={version.version}
+                  className={`p-3 ${
+                    index === 0 ? 'bg-green-50' : 'bg-white'
+                  } border-b`}
+                >
+                  <div className="font-medium">{version.version}</div>
+                  <div className="text-sm text-gray-500">
+                    Created: {new Date(version.created_at).toLocaleString()}
+                  </div>
+                  {index === 0 && (
+                    <span className="inline-block mt-1 text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded">
+                      Current
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
