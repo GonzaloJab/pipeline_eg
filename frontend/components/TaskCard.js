@@ -1,118 +1,198 @@
 // components/TaskCard.js
+import React, { useState } from 'react';
+
 export default function TaskCard({ task, onDelete, onRun, onStop }) {
-  // Prepare a status element based on task.status
-  const statusElement =
-    task.status === "running" ? (
-      <>
-        <svg
-          className="animate-spin h-4 w-4 text-gray-500"
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-        >
-          <circle
-            className="opacity-25"
-            cx="12"
-            cy="12"
-            r="10"
-            stroke="currentColor"
-            strokeWidth="4"
-          ></circle>
-          <path
-            className="opacity-75"
-            fill="currentColor"
-            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-          ></path>
-        </svg>
-        <span className="text-green-600 font-semibold">Running</span>
-      </>
-    ) : task.status === "completed" ? (
-      <>
-        <span className="inline-block w-3 h-3 rounded-full bg-green-600"></span>
-        <span className="text-green-600 font-semibold">Completed</span>
-      </>
-    ) : task.status === "error" ? (
-      <>
-        <span className="inline-block w-3 h-3 rounded-full bg-red-600"></span>
-        <span className="text-red-600 font-semibold">Crashed</span>
-      </>
-    ) : (
-      <>
-        <span className="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
-        <span className="text-gray-500">Idle</span>
-      </>
-    );
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isRunning, setIsRunning] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
+  const [error, setError] = useState(null);
+
+  const handleRun = async () => {
+    try {
+      setError(null);
+      setIsRunning(true);
+      await onRun(task.id);
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      setIsRunning(false);
+    }
+  };
+
+  const handleStop = async () => {
+    try {
+      setError(null);
+      setIsStopping(true);
+      await onStop(task.name);
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      setIsStopping(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    try {
+      setError(null);
+      setIsDeleting(true);
+      await onDelete(task.id);
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const taskType = task.taskType?.toLowerCase() || 'unknown';
+  
+  // Determine background color based on status
+  let bgColor = 'bg-white';
+  let statusElement = null;
+
+  switch (task.status?.toLowerCase()) {
+    case 'running':
+      bgColor = 'bg-blue-50';
+      statusElement = (
+        <span className="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800">
+          Running
+        </span>
+      );
+      break;
+    case 'queued':
+      bgColor = 'bg-purple-50';
+      statusElement = (
+        <span className="px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-800">
+          {task.queue_position ? `Queued (#${task.queue_position})` : 'Queued'}
+        </span>
+      );
+      break;
+    case 'completed':
+      bgColor = 'bg-green-50';
+      statusElement = (
+        <span className="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">
+          Completed
+        </span>
+      );
+      break;
+    case 'error':
+      bgColor = 'bg-red-50';
+      statusElement = (
+        <span className="px-2 py-1 text-xs rounded-full bg-red-100 text-red-800">
+          Error
+        </span>
+      );
+      break;
+    default:
+      statusElement = (
+        <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-800">
+          Idle
+        </span>
+      );
+  }
+
+  // Determine background color based on task type
+  const bgColorBasedOnType = taskType === 'testing' ? 'bg-yellow-50' : 'bg-blue-50';
 
   return (
-    <div className="border border-gray-200 rounded-lg p-4 shadow-card bg-white">
-      {/* Header: Name, Submitted Date, Status, and Control Buttons */}
-      <div className="flex justify-between items-center mb-4">
-        <div>
-          <h3 className="text-lg font-semibold text-gray-800">{task.name}</h3>
-          <span className="text-gray-500 text-sm">
-            {new Date(task.submitted_at).toLocaleString()}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          {/* Status element */}
-          <div className="flex items-center gap-1">
-            {statusElement}
+    <div className="w-full mb-4">
+      <div className={`border border-gray-200 rounded-lg p-4 shadow-sm ${bgColorBasedOnType}`}>
+        {/* Header: Name, Type, and Status */}
+        <div className="flex justify-between items-start mb-4">
+          <div className="flex-grow">
+            <div className="flex items-center gap-2">
+              <h3 className="text-lg font-semibold text-gray-800">Task: {task.name} </h3>
+              {statusElement}
+            </div>
+            <div className="text-gray-500 text-sm mt-1">
+              Submitted: {new Date(task.submitted_at).toLocaleString()}
+            </div>
           </div>
-          {/* Control buttons */}
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-gray-600">
+              GPU: {task.gpu}
+            </span>
+          </div>
+        </div>
+
+        {/* Task Details */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div className="space-y-2">
+            <div className="text-sm text-gray-600">
+              <span className="font-medium">Model:</span> {task.model}
+            </div>
+            <div className="text-sm text-gray-600">
+              <span className="font-medium">Weights:</span> {Array.isArray(task.weights) ? task.weights.join(', ') : task.weights}
+            </div>
+            {taskType === 'training' && (
+              <div className="text-sm text-gray-600">
+                <span className="font-medium">Dataset:</span> {task.datasetType}
+              </div>
+            )}
+          </div>
+          
+          <div className="space-y-2">
+            {taskType === 'training' ? (
+              <>
+                <div className="text-sm text-gray-600">
+                  <span className="font-medium">Batch Size:</span> {task.batchSize}
+                  <span className="font-medium ml-4">Epochs:</span> {task.epochs}
+                </div>
+                <div className="text-sm text-gray-600">
+                  <span className="font-medium">Learning Rate:</span> {task.lr}
+                  <span className="font-medium ml-4">Gamma:</span> {task.gamma}
+                </div>
+                <div className="text-sm text-gray-600">
+                  <span className="font-medium">Solver:</span> {task.solver}
+                  <span className="font-medium ml-4">Momentum:</span> {task.momentum}
+                </div>
+              </>
+            ) : (
+              <div className="text-sm text-gray-600">
+                <span className="font-medium">Test Dataset:</span> {task.testDataset}
+                <div className="mt-1">
+                  <span className="font-medium">Batch Size:</span> {task.batchSize}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Error Message */}
+        {task.status === 'error' && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+            <div className="font-medium mb-1">Error Details:</div>
+            <div className="whitespace-pre-wrap break-words">
+              {task.error || 'An error occurred during task execution. Check the logs for more details.'}
+            </div>
+          </div>
+        )}
+
+        {/* Action Buttons */}
+        <div className="flex justify-end gap-2 mt-4">
           <button
-            onClick={onDelete}
-            className="px-3 py-1 bg-red-500 text-white rounded-md text-sm hover:bg-red-600 transition-colors"
+            onClick={handleDelete}
+            className="px-3 py-1.5 bg-red-500 text-white rounded-md text-sm hover:bg-red-600 transition-colors"
           >
             Delete
           </button>
-          <button
-            onClick={onRun}
-            className="px-3 py-1 bg-green-700 text-white rounded-md text-sm hover:bg-green-900 transition-colors"
-          >
-            Run
-          </button>
-          <button
-            onClick={onStop}
-            className="px-3 py-1 bg-yellow-500 text-white rounded-md text-sm hover:bg-yellow-600 transition-colors"
-          >
-            Stop
-          </button>
+          {task.status !== 'completed' && (
+            <button
+              onClick={handleRun}
+              className="px-3 py-1.5 bg-green-600 text-white rounded-md text-sm hover:bg-green-700 transition-colors"
+            >
+              Run
+            </button>
+          )}
+          {(task.status === 'running' || task.status === 'queued') && (
+            <button
+              onClick={handleStop}
+              className="px-3 py-1.5 bg-yellow-500 text-white rounded-md text-sm hover:bg-yellow-600 transition-colors"
+            >
+              Stop
+            </button>
+          )}
         </div>
       </div>
-
-      {/* Simplified table for properties */}
-      <table className="min-w-full text-sm">
-        <tbody>
-          <tr className="border-b">
-            <td className="p-1">Modelo: {task.model} | Weights: {task.weights}</td>
-          </tr>
-          <tr className="border-b">
-            <td className="p-1">Dataset Type: {task.datasetType}</td>
-          </tr>
-          <tr className="border-b">
-            <td className="p-1">Batch Size: {task.batchSize} | Epochs: {task.epochs} | Learning Rate: {task.lr} | Exp LR Factor: {task.exp_LR_decrease_factor}</td>
-          </tr>
-         
-          {/* <tr className="border-b">
-            <td className="p-1">Step Size: {task.step_size} | Gamma: {task.gamma}</td>
-          </tr>
-          <tr className="border-b">
-            <td className="p-1 font">Solver: {task.solver} | Momentum: {task.momentum}</td>
-          </tr>
-          <tr className="border-b">
-            <td className="p-1">Weight Decay: {task.weight_decay} | Num Workers: {task.num_workers}</td>
-          </tr>
-          <tr className="border-b">
-            <td className="p-1">Prefetch Factor: {task.prefetch_factor}</td>
-          </tr> */}
-          <tr className="border-b">
-            <td className="p-1">Data In: {task.dataIn}</td>
-          </tr>
-          <tr className="border-b">
-            <td className="p-1">Output Dir: {task.outputDirectory}</td>
-          </tr>
-        </tbody>
-      </table>
     </div>
   );
 }

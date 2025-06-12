@@ -1,422 +1,421 @@
 // components/TrainingForm.js
 import React, { useState, useEffect } from 'react';
-import Button from "./ui/Button";
-import { AVAILABLE_MODELS } from '../config/models';
+import { AVAILABLE_MODELS_OPTIONS } from './formData/models';
+import { AVAILABLE_WEIGHTS } from './formData/weights';
+import { GPU_MEMORY_OPTIONS } from './formData/gpu';
+import api from '../services/api';
 
-export default function TrainingForm({ formData, handleChange, handleSubmit }) {
-  const [csvFiles, setCsvFiles] = useState([]);
-  const [error, setError] = useState(null);
+export default function TrainingForm({ onSuccess }) {
+  const [formData, setFormData] = useState({
+    name: '',
+    taskType: 'training',
+    model: AVAILABLE_MODELS_OPTIONS[0] || '',
+    weights: 'DEFAULT',
+    datasetType: 'PvsM',
+    selectedDatabase: '',
+    outputDirectory: '/media/isend/ssd_storage/1_EYES_TRAIN/0_remote_runs/train_tasks',
+    batchSize: 8,
+    epochs: 10,
+    lr: 0.001,
+    expLRDecreaseFactor: 0.1,
+    stepSize: 30,
+    gamma: 0.1,
+    solver: 'sgd',
+    momentum: 0.9,
+    weightDecay: 0.0001,
+    numWorkers: 4,
+    prefetchFactor: 2,
+    gpu: '12GB',
+    unfreeze_index: 0,
+  });
+
   const [dbVersions, setDbVersions] = useState([]);
-  const [existingNames, setExistingNames] = useState(new Set());
-  const [nameError, setNameError] = useState('');
-  
-  const DATASET_TYPES = [
-    'DnD',
-    'PvsM',
-    'Punct',
-    'Multiple'
-  ];
+  const [selectedDb, setSelectedDb] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-  useEffect(() => {
-    async function fetchData() {
-      try {
-        const baseUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/trains$/, '') || 'http://localhost:8000';
-        console.log('Fetching from base URL:', baseUrl); // Debug log
-        
-        // Fetch database versions
-        const dbRes = await fetch(`${baseUrl}/database/versions`, {
-          method: 'GET',
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-          },
-          mode: 'cors',
-        });
-
-        if (!dbRes.ok) {
-          throw new Error(`HTTP error! status: ${dbRes.status} - ${await dbRes.text()}`);
+  const fetchSelectedDatabase = async () => {
+    try {
+      setError(null);
+      const response = await api.getSelectedDatabase();
+      if (response.data) {
+        setSelectedDb(response.data);
+        // Only update form data if we have a selected database
+        if (response.data.path) {
+          setFormData(prev => ({
+            ...prev,
+            selectedDatabase: response.data.path
+          }));
         }
-        const versions = await dbRes.json();
-        console.log('Received versions:', versions); // Debug log
-        setDbVersions(versions);
-        
-        // Fetch existing task names
-        const namesRes = await fetch(`${baseUrl}/trains/names`, {
-          method: 'GET',
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-          },
-          mode: 'cors',
-        });
-
-        if (namesRes.ok) {
-          const data = await namesRes.json();
-          console.log('Received task names:', data); // Debug log
-          setExistingNames(new Set(data.names));
-        }
-        
-        // If no database is selected and we have versions, select the current one
-        if (!formData.selectedDatabase && versions.length > 0) {
-          const currentDb = versions.find(v => v.is_current) || versions[0];
-          handleChange("selectedDatabase")({ target: { value: currentDb.path } });
-        }
-
-        setError(null);
-      } catch (error) {
-        console.error('Error fetching data:', error);
-        setError(`Failed to fetch data: ${error.message}`);
       }
+    } catch (error) {
+      console.error('Error fetching selected database:', error);
+      setError('Failed to load selected database');
     }
-    fetchData();
-  }, []);
-
-  const handleNameChange = (e) => {
-    const newName = e.target.value;
-    if (existingNames.has(newName)) {
-      setNameError('This name already exists. Please choose a different name.');
-    } else {
-      setNameError('');
-    }
-    handleChange("name")(e);
   };
 
-  const onSubmit = async (e) => {
-    e.preventDefault();
-    if (nameError) {
-      return;
-    }
+  const fetchDbVersions = async () => {
     try {
-      await handleSubmit(e);
-      // If submission is successful, add the name to existing names
-      setExistingNames(prev => new Set([...prev, formData.name]));
+      setIsLoading(true);
+      setError(null);
+      const response = await api.getDatabaseVersions();
+      if (response?.data) {
+        setDbVersions(response.data);
+      }
     } catch (error) {
-      console.error('Error submitting form:', error);
+      console.error('Error fetching database versions:', error);
+      setError('Failed to load database versions');
+    } finally {
+      setIsLoading(false);
     }
+  };
+
+  useEffect(() => {
+    fetchDbVersions();
+    fetchSelectedDatabase();
+  }, []);
+
+  const handleDatabaseSelect = async (version) => {
+    try {
+      await api.setSelectedDatabase(version);
+      setSelectedDb(version);
+      setFormData(prev => ({
+        ...prev,
+        selectedDatabase: version.path
+      }));
+    } catch (error) {
+      console.error('Error setting selected database:', error);
+      setError('Failed to set selected database');
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError(null);
+    setIsLoading(true);
+    try {
+      const taskData = {
+        ...formData,
+        weights: formData.weights || 'DEFAULT'
+      };
+      await api.createTask(taskData);
+      setIsLoading(false);
+      if (onSuccess) onSuccess();
+    } catch (err) {
+      console.error('Error creating task:', err);
+      setError(err.response?.data?.detail || 'Failed to create training task.');
+      setIsLoading(false);
+    }
+  };
+
+  const handleChange = (field) => (e) => {
+    const value = e.target.type === 'number' ? parseFloat(e.target.value) : e.target.value;
+    setFormData({ ...formData, [field]: value });
   };
 
   return (
-    <form
-      onSubmit={onSubmit}
-      className="max-w-screen-lg mx-auto p-6 bg-white shadow-md rounded-md"
-    >
+    <div className="bg-white shadow rounded-lg">
       {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
-          <strong className="font-bold">Error!</strong>
-          <span className="block sm:inline"> {error}</span>
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+          {error}
         </div>
       )}
-      {/* General Section */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-        {/* Task Name */}
-        <div className="space-y-1">
-          <label className="block text-sm font-medium text-gray-700">
-            Nombre tarea
-          </label>
-          <input
-            type="text"
-            placeholder="Task Name"
-            required
-            value={formData.name}
-            onChange={handleNameChange}
-            className={`w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-              nameError ? 'border-red-500' : ''
-            }`}
-          />
-          {nameError && (
-            <p className="text-red-500 text-sm mt-1">{nameError}</p>
-          )}
-        </div>
-        {/* Modelo */}
-        <div className="space-y-1">
-          <label className="block text-sm font-medium text-gray-700">
-            Modelo
-          </label>
-          <select
-            value={formData.model}
-            onChange={handleChange("model")}
-            className="w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+      <form onSubmit={handleSubmit} className="px-4 py-5 sm:p-6">
+        <div className="space-y-4">
+          {/* First row: 4 columns */}
+          <div className="grid grid-cols-4 gap-4">
+            {/* Task Name */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                Task Name
+              </label>
+              <input
+                type="text"
+                value={formData.name}
+                onChange={handleChange("name")}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                required
+              />
+            </div>
+
+            {/* Model Selection */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                Model
+              </label>
+              <select
+                value={formData.model}
+                onChange={handleChange("model")}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+              >
+                {AVAILABLE_MODELS_OPTIONS.map(model => (
+                  <option key={model} value={model}>
+                    {model}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Weights */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                Weights
+              </label>
+              <select
+                value={formData.weights}
+                onChange={handleChange("weights")}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+              >
+                {AVAILABLE_WEIGHTS.map(weight => (
+                  <option key={weight.value} value={weight.value}>
+                    {weight.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* GPU Memory */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                GPU Memory
+              </label>
+              <select
+                value={formData.gpu}
+                onChange={handleChange("gpu")}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+              >
+                {GPU_MEMORY_OPTIONS.map(option => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Selected Database Display */}
+          <div className="bg-gray-50 p-4 rounded-md">
+            <label className="block text-sm font-medium text-gray-700">
+              Selected Database
+            </label>
+            {selectedDb ? (
+              <div className="text-gray-900">
+                <p className="font-medium">{selectedDb.version}</p>
+                <p className="text-sm text-gray-500 mt-1">{selectedDb.path}</p>
+              </div>
+            ) : (
+              <div className="text-yellow-600 bg-yellow-50 p-2 rounded">
+                No database selected. Please select one in the Database tab.
+              </div>
+            )}
+          </div>
+
+          {/* Dataset Type */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700">
+              Dataset Type
+            </label>
+            <select
+              value={formData.datasetType}
+              onChange={handleChange("datasetType")}
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+              required
+            >
+              <option value="">Select Dataset Type</option>
+              <option value="DnD">DnD</option>
+              <option value="PvsM">PvsM</option>
+              <option value="Punct">Punct</option>
+              <option value="Multiple">Multiple</option>
+            </select>
+          </div>
+
+          {/* Training Parameters */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold">Training Parameters</h3>
+            
+            {/* First row of parameters */}
+            <div className="grid grid-cols-4 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Batch Size
+                </label>
+                <input
+                  type="number"
+                  value={formData.batchSize}
+                  onChange={handleChange("batchSize")}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Epochs
+                </label>
+                <input
+                  type="number"
+                  value={formData.epochs}
+                  onChange={handleChange("epochs")}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Learning Rate
+                </label>
+                <input
+                  type="number"
+                  value={formData.lr}
+                  onChange={handleChange("lr")}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                  step="0.0001"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  LR Decrease Factor
+                </label>
+                <input
+                  type="number"
+                  value={formData.expLRDecreaseFactor}
+                  onChange={handleChange("expLRDecreaseFactor")}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                  step="0.1"
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Second row of parameters */}
+            <div className="grid grid-cols-4 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Step Size
+                </label>
+                <input
+                  type="number"
+                  value={formData.stepSize}
+                  onChange={handleChange("stepSize")}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Gamma
+                </label>
+                <input
+                  type="number"
+                  value={formData.gamma}
+                  onChange={handleChange("gamma")}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                  step="0.1"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Solver
+                </label>
+                <select
+                  value={formData.solver}
+                  onChange={handleChange("solver")}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                >
+                  <option value="sgd">SGD</option>
+                  <option value="adam">Adam</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Momentum
+                </label>
+                <input
+                  type="number"
+                  value={formData.momentum}
+                  onChange={handleChange("momentum")}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                  step="0.1"
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Third row of parameters */}
+            <div className="grid grid-cols-4 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Weight Decay
+                </label>
+                <input
+                  type="number"
+                  value={formData.weightDecay}
+                  onChange={handleChange("weightDecay")}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                  step="0.0001"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Num Workers
+                </label>
+                <input
+                  type="number"
+                  value={formData.numWorkers}
+                  onChange={handleChange("numWorkers")}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Prefetch Factor
+                </label>
+                <input
+                  type="number"
+                  value={formData.prefetchFactor}
+                  onChange={handleChange("prefetchFactor")}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Unfreeze Index
+                </label>
+                <input
+                  type="number"
+                  value={formData.unfreeze_index}
+                  onChange={handleChange("unfreeze_index")}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                  required
+                />
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={isLoading}
+            className={`w-full py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white 
+              ${isLoading ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'} 
+              focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500`}
           >
-            <option value="">-- Select a model --</option>
-            {AVAILABLE_MODELS.map((model) => (
-              <option key={model} value={model}>
-                {model}
-              </option>
-            ))}
-          </select>
+            {isLoading ? 'Creating...' : 'Create Training Task'}
+          </button>
         </div>
-        {/* Pesos */}
-        <div className="space-y-1">
-          <label className="block text-sm font-medium text-gray-700">
-            Pesos
-          </label>
-          <input
-            type="text"
-            placeholder="Weights"
-            value={formData.weights}
-            onChange={handleChange("weights")}
-            className="w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-      </div>
-
-      {/* Database and Dataset Type Selection */}
-      <h2 className="text-2xl font-semibold text-gray-800 mb-4">
-        Database & Dataset Selection
-      </h2>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-        {/* Database Selection */}
-        <div className="space-y-1">
-          <label className="block text-sm font-medium text-gray-700">
-            Select Database Version
-          </label>
-          <select
-            value={formData.selectedDatabase || ''}
-            onChange={handleChange("selectedDatabase")}
-            required
-            className="w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">-- Select a database --</option>
-            {dbVersions.map((db) => (
-              <option key={db.path} value={db.path}>
-                {db.filename} {db.is_current ? '(Current)' : ''} - {new Date(db.created_at).toLocaleString()}
-              </option>
-            ))}
-          </select>
-        </div>
-        {/* Dataset Type Selection */}
-        <div className="space-y-1">
-          <label className="block text-sm font-medium text-gray-700">
-            Select Dataset Type
-          </label>
-          <select
-            value={formData.datasetType || ''}
-            onChange={handleChange("datasetType")}
-            required
-            className="w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">-- Select a dataset type --</option>
-            {DATASET_TYPES.map((type) => (
-              <option key={type} value={type}>
-                {type}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* File Paths Section */}
-      <h2 className="text-2xl font-semibold text-gray-800 mb-4">
-        Rutas de archivos
-      </h2>
-      <div className="grid grid-cols-1 sm:grid-cols-1 gap-4 mb-6">
-        <div className="space-y-1">
-          <label className="block text-sm font-medium text-gray-700">
-            Imágenes:
-          </label>
-          <input
-            type="text"
-            placeholder="Data In"
-            required
-            value={formData.dataIn}
-            onChange={handleChange("dataIn")}
-            className="w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-        <div className="space-y-1">
-          <label className="block text-sm font-medium text-gray-700">
-            Guardar en:
-          </label>
-          <input
-            type="text"
-            placeholder="Output Directory"
-            required
-            value={formData.outputDirectory}
-            onChange={handleChange("outputDirectory")}
-            className="w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-      </div>
-
-      {/* Hiperparámetros Section */}
-      <h2 className="text-2xl font-semibold text-gray-800 mb-4">
-        Hiperparámetros
-      </h2>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
-        {/* Batch Size */}
-        <div className="space-y-1">
-          <label className="block text-sm font-medium text-gray-700">
-            Batch Size
-          </label>
-          <input
-            type="number"
-            required
-            value={formData.batchSize}
-            onChange={handleChange("batchSize")}
-            className="w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-        {/* Epochs */}
-        <div className="space-y-1">
-          <label className="block text-sm font-medium text-gray-700">
-            Epochs
-          </label>
-          <input
-            type="number"
-            required
-            value={formData.epochs}
-            onChange={handleChange("epochs")}
-            className="w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-        {/* Learning Rate */}
-        <div className="space-y-1">
-          <label className="block text-sm font-medium text-gray-700">
-            Learning Rate
-          </label>
-          <input
-            type="number"
-            step="0.0001"
-            required
-            value={formData.lr}
-            onChange={handleChange("lr")}
-            className="w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-        {/* Exp LR Decrease Factor */}
-        <div className="space-y-1">
-          <label className="block text-sm font-medium text-gray-700">
-            Exp-LR Dec.Factor
-          </label>
-          <input
-            type="number"
-            step="0.01"
-            required
-            value={formData.expLRDecreaseFactor}
-            onChange={handleChange("expLRDecreaseFactor")}
-            className="w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-        {/* Step Size */}
-        <div className="space-y-1">
-          <label className="block text-sm font-medium text-gray-700">
-            Step Size
-          </label>
-          <input
-            type="number"
-            required
-            value={formData.stepSize}
-            onChange={handleChange("stepSize")}
-            className="w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-        {/* Gamma */}
-        <div className="space-y-1">
-          <label className="block text-sm font-medium text-gray-700">
-            Gamma
-          </label>
-          <input
-            type="number"
-            step="0.01"
-            required
-            value={formData.gamma}
-            onChange={handleChange("gamma")}
-            className="w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-      </div>
-
-      {/* Optimizer Settings Section */}
-      <h2 className="text-2xl font-semibold text-gray-800 mb-4">
-        Optimizer Settings
-      </h2>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
-        {/* Solver */}
-        <div className="space-y-1">
-          <label className="block text-sm font-medium text-gray-700">
-            Solver
-          </label>
-          <select
-            value={formData.solver}
-            onChange={handleChange("solver")}
-            className="w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="sgd">sgd</option>
-            <option value="adam">adam</option>
-          </select>
-        </div>
-        {/* Momentum */}
-        <div className="space-y-1">
-          <label className="block text-sm font-medium text-gray-700">
-            Momentum
-          </label>
-          <input
-            type="number"
-            step="0.01"
-            required
-            value={formData.momentum}
-            onChange={handleChange("momentum")}
-            className="w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-        {/* Weight Decay */}
-        <div className="space-y-1">
-          <label className="block text-sm font-medium text-gray-700">
-            Weight Decay
-          </label>
-          <input
-            type="number"
-            step="0.0001"
-            required
-            value={formData.weightDecay}
-            onChange={handleChange("weightDecay")}
-            className="w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-      </div>
-
-      {/* Other Settings Section */}
-      <h2 className="text-2xl font-semibold text-gray-800 mb-4">
-        Other Settings
-      </h2>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
-        {/* Num Workers */}
-        <div className="space-y-1">
-          <label className="block text-sm font-medium text-gray-700">
-            Num Workers
-          </label>
-          <input
-            type="number"
-            required
-            value={formData.numWorkers}
-            onChange={handleChange("numWorkers")}
-            className="w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-        {/* Prefetch Factor */}
-        <div className="space-y-1">
-          <label className="block text-sm font-medium text-gray-700">
-            Prefetch Factor
-          </label>
-          <input
-            type="number"
-            required
-            value={formData.prefetchFactor}
-            onChange={handleChange("prefetchFactor")}
-            className="w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-      </div>
-
-      <div className="mt-6">
-        <Button
-          variant="default"
-          type="submit"
-          className="w-full bg-red-500 text-white py-2 rounded-md hover:bg-red-600"
-        >
-          Create Task
-        </Button>
-      </div>
-    </form>
+      </form>
+    </div>
   );
 }

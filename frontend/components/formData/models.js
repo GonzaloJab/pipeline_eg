@@ -1,5 +1,6 @@
 // Configuration file for available models
-export const AVAILABLE_MODELS = [
+export const AVAILABLE_MODELS_OPTIONS = [
+    'PvsM',
     'MobileNetV2',
     'FCN_DnD',
     'Effnet_b0',
@@ -12,7 +13,7 @@ export const AVAILABLE_MODELS = [
     'DnD_EffNet_M_V2',
     'DnD_EffNet_S_V2',
     'MobileNetV3',
-    'PvsM',
+    
     'FCN_PUNCT',
     'MULTI',
     'MULTI_EFFNETV2M',
@@ -21,4 +22,4 @@ export const AVAILABLE_MODELS = [
     'PUNCT_EFFNETV2M_CLIENTWEIGHTED',
     'PUNCT_EFFNETV2M',
     'PvsMEFFNETV2M'
-]; 
+];

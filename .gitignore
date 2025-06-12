@@ -6,9 +6,6 @@
 node_modules/
 
 # Optional but recommended
-.env*.local
-*.env
-.DS_Store
 *.log
 *.github
 ssh_key

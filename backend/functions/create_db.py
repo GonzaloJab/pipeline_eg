@@ -7,7 +7,14 @@ import re
 from datetime import datetime
 import os
 from dotenv import load_dotenv
+import hashlib
+import multiprocessing as mp
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
+import json
 
+# Constants
+HASH_STATE_FILE = "directory_hashes.json"
 
 def determine_company_with_ImageFilename(filename):
         if len(filename.split('_')) == 6:
@@ -20,55 +27,6 @@ def determine_company_with_ImageFilename(filename):
             return 'GSW'
         else:
             return 'UNK_FILETYPE'
-
-def create_db(db_name: str):
-    """Create a new database with the given name."""
-    # Create the database in the specified path
-    conn = sqlite3.connect(db_name)
-    cursor = conn.cursor()
-
-    # Create the images table with version support and all label columns
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS images (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            filepath TEXT NOT NULL,
-            filename TEXT NOT NULL,
-            label_DnD TEXT NOT NULL,
-            label_PvsM TEXT NOT NULL,
-            label_Punct TEXT NOT NULL,
-            label_Multi TEXT NOT NULL,
-            client TEXT NOT NULL,
-            diameter REAL,
-            image_width INTEGER,
-            image_height INTEGER,
-            version TEXT NOT NULL,
-            is_current BOOLEAN DEFAULT 1,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-
-    # Create an index on version and is_current for faster queries
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_version_current 
-        ON images(version, is_current)
-    ''')
-
-    conn.commit()
-    conn.close()
-
-def get_new_db_path(base_path: str) -> str:
-    """Generate a new database path with timestamp only if needed."""
-    directory = os.path.dirname(base_path)
-    filename = os.path.basename(base_path)
-    
-    # If the filename already has a timestamp, use it as is
-    if filename.startswith('20'):  # Check if filename starts with a year
-        return base_path
-    
-    # Otherwise, add timestamp
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    base_name = os.path.splitext(filename)[0]
-    return os.path.join(directory, f"{timestamp}_{base_name}.db")
 
 def get_database_hash(db_path: str) -> str:
     """
@@ -87,7 +45,6 @@ def get_database_hash(db_path: str) -> str:
             SELECT filepath, filename, label_DnD, label_PvsM, label_Punct, label_Multi,
                    client, diameter, image_width, image_height
             FROM images
-            WHERE is_current = 1
             ORDER BY filepath
         """)
         rows = cursor.fetchall()
@@ -96,7 +53,6 @@ def get_database_hash(db_path: str) -> str:
         data_str = '|'.join([str(row) for row in rows])
         
         # Use a hash function to create a compact representation
-        import hashlib
         return hashlib.md5(data_str.encode()).hexdigest()
     except Exception as e:
         print(f"Error getting database hash: {e}")
@@ -104,33 +60,6 @@ def get_database_hash(db_path: str) -> str:
     finally:
         conn.close()
 
-def has_database_changes(current_db: str) -> bool:
-    """
-    Check if there would be changes in the database by comparing current data
-    with what's in the database.
-    Returns True if changes are detected, False otherwise.
-    """
-    # Get hash of current database
-    current_hash = get_database_hash(current_db)
-    
-    # Create a temporary database with new data
-    import tempfile
-    with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as temp_db:
-        temp_path = temp_db.name
-    
-    try:
-        # Create and populate temporary database
-        create_db(temp_path)
-        
-        # Get hash of new data
-        new_hash = get_database_hash(temp_path)
-        
-        # Compare hashes
-        return current_hash != new_hash
-    finally:
-        # Clean up temporary database
-        if os.path.exists(temp_path):
-            os.unlink(temp_path)
 
 def get_current_db_path(db_dir: str) -> str:
     """
@@ -148,51 +77,6 @@ def get_current_db_path(db_dir: str) -> str:
     except Exception as e:
         print(f"Error getting current database: {e}")
         return None
-
-def update_db(db_path: str):
-    """Update database with new data and create a new version if changes are detected."""
-    # Get the current database path
-    db_dir = os.path.dirname(db_path)
-    current_db = get_current_db_path(db_dir)
-    
-    # If we have a current database, check for changes
-    if current_db and not has_database_changes(current_db):
-        print("No changes detected in the database")
-        return current_db, False
-    
-    # If the file already exists with a timestamp, use it directly
-    if os.path.basename(db_path).startswith('20'):
-        create_db(db_path)
-        return db_path, True
-
-    # Otherwise, generate new database path with timestamp
-    new_db_path = get_new_db_path(db_path)
-    
-    # Create new database
-    create_db(new_db_path)
-    
-    # After successfully creating the new database, update the symlink
-    try:
-        if os.path.exists(db_path):
-            if os.path.islink(db_path):
-                os.unlink(db_path)
-            else:
-                # If it's a regular file, move it to a timestamped version
-                old_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                old_db_path = os.path.join(
-                    os.path.dirname(db_path),
-                    f"{old_timestamp}_{os.path.splitext(os.path.basename(db_path))[0]}.db"
-                )
-                os.rename(db_path, old_db_path)
-        
-        # Create the symlink to the new database
-        os.symlink(new_db_path, db_path)
-        print(f"Created new database version: {new_db_path}")
-        print(f"Updated symlink: {db_path} -> {new_db_path}")
-    except Exception as e:
-        print(f"Failed to update symlink: {e}")
-    
-    return new_db_path, True
 
 def get_db_versions(base_path: str) -> list:
     """Get all available database versions with their creation timestamps."""
@@ -253,9 +137,11 @@ def get_latest_version(db_name: str) -> str:
         return f"v{version_num + 1}"
     return "v1"  # First version
 
-def create_dataset_csv(db_path: str, output_dir: str, dataset_type: str, train_path: str = None, val_path: str = None, split_ratio: float = 0.8) -> tuple:
+def create_dataset_csv(db_path: str, output_dir: str, dataset_type: str, train_path: str = None, val_path: str = None, 
+                   split_ratio: float = 0.8, sample_percentage: float = 100.0) -> tuple:
     """
     Create train and validation CSV datasets from the database based on dataset type.
+    Uses stratified sampling to ensure even distribution of both labels and clients.
     
     Args:
         db_path (str): Path to the SQLite database
@@ -264,10 +150,20 @@ def create_dataset_csv(db_path: str, output_dir: str, dataset_type: str, train_p
         train_path (str, optional): Specific path for training CSV
         val_path (str, optional): Specific path for validation CSV
         split_ratio (float): Ratio for train/validation split (default: 0.8)
+        sample_percentage (float): Percentage of total data to use (default: 100.0)
     
     Returns:
         tuple: (train_csv_path, val_csv_path)
     """
+    # Input validation
+    if not 0 < sample_percentage <= 100:
+        raise ValueError("sample_percentage must be between 0 and 100")
+    if not 0 < split_ratio < 1:
+        raise ValueError("split_ratio must be between 0 and 1")
+    
+    # Set random seed for reproducibility
+    RANDOM_SEED = 42
+    
     # Map dataset type to corresponding column
     type_to_column = {
         'DnD': 'label_DnD',
@@ -288,8 +184,7 @@ def create_dataset_csv(db_path: str, output_dir: str, dataset_type: str, train_p
         SELECT filepath, filename, {target_column} as label, client,
                image_width, image_height
         FROM images
-        WHERE is_current = 1
-        AND {target_column} != ''
+        WHERE {target_column} != ''
         AND {target_column} IS NOT NULL
     """
     
@@ -299,19 +194,80 @@ def create_dataset_csv(db_path: str, output_dir: str, dataset_type: str, train_p
     if df.empty:
         raise ValueError(f"No data found for dataset type {dataset_type}")
     
-    # Print dataset statistics
-    print(f"\nDataset statistics for {dataset_type}:")
+    # Print initial dataset statistics
+    print(f"\nInitial dataset statistics for {dataset_type}:")
     print(f"Total samples: {len(df)}")
-    print("\nLabel distribution:")
+    print("\nInitial label distribution:")
     print(df['label'].value_counts())
+    print("\nInitial client distribution:")
+    print(df['client'].value_counts())
     
-    # Shuffle the dataframe
-    df = df.sample(frac=1, random_state=42).reset_index(drop=True)
+    # Create a combined stratification column (label_client)
+    df['strat'] = df['label'] + '_' + df['client']
     
-    # Split into train and validation sets
-    split_idx = int(len(df) * split_ratio)
-    train_df = df[:split_idx]
-    val_df = df[split_idx:]
+    # If sample_percentage < 100, reduce the dataset size while maintaining distributions
+    if sample_percentage < 100:
+        # Calculate the number of samples to keep
+        n_samples = int(len(df) * (sample_percentage / 100))
+        print(f"\nReducing dataset to {sample_percentage}% ({n_samples} samples)")
+        
+        # Sample from each stratum proportionally
+        sampled_df = pd.DataFrame()
+        for strat in df['strat'].unique():
+            strat_df = df[df['strat'] == strat]
+            strat_samples = int(len(strat_df) * (sample_percentage / 100))
+            if strat_samples == 0:  # Ensure at least one sample per stratum
+                strat_samples = 1
+            sampled_strat = strat_df.sample(n=min(strat_samples, len(strat_df)), 
+                                          random_state=RANDOM_SEED)
+            sampled_df = pd.concat([sampled_df, sampled_strat])
+        df = sampled_df
+        
+        print("\nReduced dataset statistics:")
+        print(f"Total samples after reduction: {len(df)}")
+        print("\nLabel distribution after reduction:")
+        print(df['label'].value_counts())
+        print("\nClient distribution after reduction:")
+        print(df['client'].value_counts())
+    
+    # Initialize empty DataFrames for train and validation
+    train_df = pd.DataFrame()
+    val_df = pd.DataFrame()
+    
+    # Process each label-client combination separately
+    for strat in df['strat'].unique():
+        strat_df = df[df['strat'] == strat]
+        
+        # Shuffle the stratified dataframe
+        strat_df = strat_df.sample(frac=1, random_state=RANDOM_SEED)
+        
+        # Calculate split index for this stratum
+        split_idx = int(len(strat_df) * split_ratio)
+        
+        # Add to train and validation sets
+        train_df = pd.concat([train_df, strat_df[:split_idx]])
+        val_df = pd.concat([val_df, strat_df[split_idx:]])
+    
+    # Drop the stratification column
+    train_df = train_df.drop('strat', axis=1)
+    val_df = val_df.drop('strat', axis=1)
+    
+    # Shuffle the final datasets
+    train_df = train_df.sample(frac=1, random_state=RANDOM_SEED).reset_index(drop=True)
+    val_df = val_df.sample(frac=1, random_state=RANDOM_SEED).reset_index(drop=True)
+    
+    # Print final distribution statistics
+    print("\nFinal Training set distribution:")
+    print("Labels:")
+    print(train_df['label'].value_counts())
+    print("\nClients:")
+    print(train_df['client'].value_counts())
+    
+    print("\nFinal Validation set distribution:")
+    print("Labels:")
+    print(val_df['label'].value_counts())
+    print("\nClients:")
+    print(val_df['client'].value_counts())
     
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
@@ -319,10 +275,12 @@ def create_dataset_csv(db_path: str, output_dir: str, dataset_type: str, train_p
     # Use provided paths or generate with timestamp
     if not train_path:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        train_path = os.path.join(output_dir, f'train_{dataset_type}_{timestamp}.csv')
+        size_suffix = f"_{int(sample_percentage)}pct" if sample_percentage < 100 else ""
+        train_path = os.path.join(output_dir, f'train_{dataset_type}{size_suffix}_{timestamp}.csv')
     if not val_path:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        val_path = os.path.join(output_dir, f'val_{dataset_type}_{timestamp}.csv')
+        size_suffix = f"_{int(sample_percentage)}pct" if sample_percentage < 100 else ""
+        val_path = os.path.join(output_dir, f'val_{dataset_type}{size_suffix}_{timestamp}.csv')
     
     # Save CSV files
     train_df.to_csv(train_path, index=False)
@@ -396,6 +354,114 @@ def get_unique_labels(db_name: str) -> dict:
     conn.close()
     return unique_labels
 
+def save_hash_state(hashes: dict, state_file: str = HASH_STATE_FILE):
+    """Save directory hashes to a JSON file"""
+    state = {
+        'hashes': hashes,
+        'last_update': datetime.now().isoformat()
+    }
+    with open(state_file, 'w') as f:
+        json.dump(state, f, indent=4)
+
+def load_hash_state(state_file: str = HASH_STATE_FILE) -> dict:
+    """Load directory hashes from JSON file"""
+    try:
+        with open(state_file, 'r') as f:
+            state = json.load(f)
+            return state['hashes']
+    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+        return {}
+
+def hash_file(filepath):
+    """Hash a single file"""
+    sha = hashlib.sha256()
+    with open(filepath, 'rb') as f:
+        while chunk := f.read(8192):
+            sha.update(chunk)
+    return filepath, sha.hexdigest()
+
+def hash_directory(directory):
+    """
+    Calculate a SHA-256 hash of all files in a directory using parallel processing.
+    Files are processed in sorted order to ensure consistent hashing.
+    """
+    # Get all files in sorted order
+    files = []
+    for root, _, filenames in os.walk(directory):
+        for name in sorted(filenames):
+            files.append(os.path.join(root, name))
+    
+    if not files:
+        return hashlib.sha256().hexdigest()
+
+    # Use thread pool for file hashing
+    combined = hashlib.sha256()
+    with ThreadPoolExecutor(max_workers=min(32, len(files))) as executor:
+        future_to_file = {executor.submit(hash_file, f): f for f in files}
+        for future in tqdm(future_to_file, desc=f"Hashing {os.path.basename(directory)}", leave=False):
+            try:
+                _, file_hash = future.result()
+                combined.update(file_hash.encode())
+            except Exception as e:
+                print(f"Error hashing file: {e}")
+                continue
+    
+    return combined.hexdigest()
+
+def check_directories_modified(directories: list, db_dir: str) -> tuple[bool, dict]:
+    """
+    Check if any of the provided directories have been modified by comparing with stored hash state.
+    
+    Args:
+        directories (list): List of directory paths to check
+        db_dir (str): Directory containing the database files (used for hash state file location)
+    
+    Returns:
+        tuple: (bool indicating if changes detected, dict with details)
+    """
+    details = {
+        "total_directories": len(directories),
+        "modified_directories": [],
+        "last_check": datetime.now().isoformat()
+    }
+    
+    # Ensure hash state file is in the database directory
+    state_file = os.path.join(db_dir, HASH_STATE_FILE)
+    stored_hashes = load_hash_state(state_file)
+    
+    # Get current directory hashes using thread pool
+    existing_dirs = [d for d in directories if os.path.exists(d)]
+    if not existing_dirs:
+        return True, details
+
+    print("Calculating directory hashes...")
+    current_hashes = {}
+    with ThreadPoolExecutor(max_workers=min(8, len(existing_dirs))) as executor:
+        future_to_dir = {executor.submit(hash_directory, d): d for d in existing_dirs}
+        for future in tqdm(future_to_dir, desc="Hashing directories"):
+            directory = future_to_dir[future]
+            try:
+                current_hashes[directory] = future.result()
+            except Exception as e:
+                print(f"Error processing directory {directory}: {e}")
+                current_hashes[directory] = None
+    
+    # Compare hashes
+    changes_detected = False
+    for directory, current_hash in current_hashes.items():
+        if current_hash is None or directory not in stored_hashes or stored_hashes[directory] != current_hash:
+            changes_detected = True
+            details["modified_directories"].append(directory)
+    
+    # If no changes detected, we're done
+    if not changes_detected:
+        return False, details
+        
+    # If changes detected, update the hash state file
+    save_hash_state(current_hashes, state_file)
+    
+    return True, details
+
 if __name__ == "__main__":
     # Load environment variables
     load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '..', '.env'))
@@ -406,9 +472,6 @@ if __name__ == "__main__":
     
     # Ensure database directory exists
     os.makedirs(DB_DIR, exist_ok=True)
-    
-    # Update database
-    update_db(DB_PATH)
     
     # List versions
     versions = get_db_versions(DB_PATH)

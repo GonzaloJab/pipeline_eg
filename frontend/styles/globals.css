@@ -28,7 +28,7 @@
     --chart-3: 197 37% 24%;
     --chart-4: 43 74% 66%;
     --chart-5: 27 87% 67%;
-    --radius: 0.5rem
+    --radius: 0.5rem;
   }
   .dark {
     --background: 20 14.3% 4.1%;
@@ -64,5 +64,16 @@
   }
   body {
     @apply bg-background text-foreground;
+    display: block !important;
   }
+}
+
+/* Remove FOUC (Flash of Unstyled Content) */
+html {
+  visibility: visible !important;
+}
+
+/* Override any display:none on body */
+body {
+  display: block !important;
 }
