@@ -1,6 +1,7 @@
 import axios from 'axios';
 
 // Create axios instance with base configuration
+console.log('API URL from env:', process.env.NEXT_PUBLIC_API_URL);
 const axiosInstance = axios.create({
     baseURL: process.env.NEXT_PUBLIC_API_URL,
     timeout: 5000,
@@ -32,7 +33,7 @@ const API_PATHS = {
     database: {
         versions: '/trains/database/versions',
         labels: '/trains/database/labels',
-        refresh: '/trains/database/refresh',
+        refresh: '/database/refresh',
         selected: '/trains/database/selected'
     },
     csv: '/trains/csv-files'

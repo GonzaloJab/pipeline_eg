@@ -15,7 +15,7 @@ export default function TestingForm({ onSuccess }) {
             '/media/isend/ssd_storage/2_EYES_INFER/MODELS/GAMMA/v2_weights/D4_EFFNET_CRACKS_FLAKES_SLIVERS_CLEANED-epoch0_val_loss0.4925_val_acc0.9054.pth',
             '/media/isend/ssd_storage/2_EYES_INFER/MODELS/GAMMA/v2_weights/D5_EFFNET-epoch41_val_loss_0.7089_valACC_0.8826.pth'
         ],
-        testDataset: '/media/isend/nas/PHOTO_BANK/4_TEST_DATA/9_TOY_GAMMA_TESTSET',
+        pm2: '/media/isend/nas/PHOTO_BANK/4_TEST_DATA/9_TOY_GAMMA_TESTSET',
         batchSize: 32,
         numWorkers: 10,
         prefetchFactor: 2,

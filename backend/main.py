@@ -40,12 +40,6 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'),ov
 
 
 # Update CORS configuration to be more specific
-ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:8000",
-    "http://127.0.0.1:8000"
-]
 
 '''
 Previous CORS config was too permissive
@@ -69,17 +63,28 @@ TRAIN_TASK_BASE_DIR = os.getenv("TRAIN_TASK_BASE_DIR", "/media/isend/ssd_storage
 TEST_TASK_BASE_DIR = os.getenv("TEST_TASK_BASE_DIR", "/media/isend/ssd_storage/2_EYES_INFER/0_remote_runs/test_tasks")
 MLRUNS_DIR = os.getenv("MLRUNS_DIR", "/media/isend/ssd_storage/1_EYES_TRAIN/0_remote_runs/mlruns")
 TEST_RESULT_DIR = os.getenv("TEST_RESULT_DIR", "/media/isend/ssd_storage/2_EYES_INFER/0_remote_runs/test_results")
-MAX_TASKS_PER_GPU
+MAX_TASKS_PER_GPU = 1
+# ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000,http://127.0.0.1:8000")
+
+
+
+
+key = paramiko.RSAKey.from_private_key_file(SSH_KEY)
+ssh = paramiko.SSHClient()
+ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+ssh.connect(SSH_HOST, username=SSH_USER, pkey=key)
 # Make sure required directories exist locally
+
+
 for directory in [TRAIN_TASK_BASE_DIR, TEST_TASK_BASE_DIR, DB_DIR]:
     try:
-        os.makedirs(directory, exist_ok=True)
+        ssh.exec_command(f"mkdir -p '{directory}'")   
         print(f"Ensured directory exists: {directory}")
     except Exception as e:
         print(f"Warning: Could not create directory {directory}: {e}")
 
-print(f"Allowed origins: {ALLOWED_ORIGINS}")
 
+ssh.close()
 
 
 # FastAPI app with lifespan
@@ -87,6 +92,12 @@ print(f"Allowed origins: {ALLOWED_ORIGINS}")
 async def lifespan(app: FastAPI):
     # Startup
     print("Starting up the application...")
+    
+    # Log environment variables
+    print("\n=== Environment Variables ===")
+    print(f"ALLOWED_ORIGINS: {os.getenv('ALLOWED_ORIGINS')}")
+    print(f"Parsed CORS origins: {os.getenv('ALLOWED_ORIGINS', '').split(',')}")
+    print("===========================\n")
     
     # Ensure remote directories exist
     await ensure_remote_directories()
@@ -166,32 +177,65 @@ async def lifespan(app: FastAPI):
 # Create the FastAPI app with lifespan
 app = FastAPI(lifespan=lifespan)
 
+
+
 # Configure CORS with specific allowed origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    max_age=3600,  # Cache preflight requests for 1 hour
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
+    expose_headers=["Content-Type", "Authorization"]
 )
 
-# Add error handling middleware
 @app.middleware("http")
-async def add_error_handling(request: Request, call_next):
-    try:
-        # Log the incoming request
-        print(f"Incoming request: {request.method} {request.url.path}")
-        response = await call_next(request)
-        # Log the response
-        print(f"Response status: {response.status_code}")
-        return response
-    except Exception as e:
-        print(f"Error handling request: {str(e)}")
-        return JSONResponse(
-            status_code=500,
-            content={"detail": str(e)}
-        )
+async def log_requests(request: Request, call_next):
+    # Get the real client IP from X-Forwarded-For header
+    forwarded_for = request.headers.get('x-forwarded-for')
+    real_ip = forwarded_for.split(',')[0] if forwarded_for else request.client.host
+    
+    # Log request details
+    print("\n=== Incoming Request ===")
+    print(f"Method: {request.method}")
+    print(f"URL: {request.url}")
+    print(f"Headers: {dict(request.headers)}")
+    print(f"Client IP (Direct): {request.client.host}")
+    print(f"Client IP (X-Forwarded-For): {forwarded_for}")
+    print(f"Real Client IP: {real_ip}")
+    print(f"Origin: {request.headers.get('origin', 'No origin')}")
+    
+    # Log CORS headers
+    print("\n=== CORS Headers ===")
+    print(f"Access-Control-Allow-Origin: {request.headers.get('origin', 'Not set')}")
+    print(f"Access-Control-Allow-Methods: {request.headers.get('access-control-allow-methods', 'Not set')}")
+    print(f"Access-Control-Allow-Headers: {request.headers.get('access-control-allow-headers', 'Not set')}")
+    
+    # Add CORS headers to response
+    response = await call_next(request)
+    
+    # Set CORS headers only for allowed origins
+    origin = request.headers.get('origin')
+    allowed_origins = [
+        "http://127.0.0.1:3000",
+        "http://localhost:3000",
+        "http://172.26.1.50:3000",
+        "http://172.26.7.10:3000",
+        "http://172.26.7.11:3000"
+    ]
+    if origin in allowed_origins:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Expose-Headers"] = "Content-Type, Authorization"
+    
+    # Log response details
+    print("\n=== Response ===")
+    print(f"Status: {response.status_code}")
+    print(f"Headers: {dict(response.headers)}")
+    
+    return response
 
 # Models
 class BaseTask(BaseModel):
@@ -543,12 +587,19 @@ async def run_remote_task(task: Union[TrainingTask, TestingTask]):
         print(f"\n=== Starting execution of task {task.name} ===")
         # get timestamp
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        
-        # Determine task directory based on task type
+
+        # Setup SSH connection
+        key = paramiko.RSAKey.from_private_key_file(SSH_KEY)
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(SSH_HOST, username=SSH_USER, pkey=key)
+        sftp = ssh.open_sftp()
+
+        # # Determine task directory based on task type
         base_dir = TEST_TASK_BASE_DIR if isinstance(task, TestingTask) else TRAIN_TASK_BASE_DIR
         task_dir = os.path.join(base_dir, task.name).replace('\\', '/')
-        os.makedirs(task_dir, exist_ok=True)
-        print(f"[EXEC] Created local task directory: {task_dir}")
+        # ssh.exec_command(f"mkdir -p '{task_dir}'")
+        # print(f"[EXEC] Created local task directory: {task_dir}")
 
         # Define task-specific paths
         file_prefix = 'test' if isinstance(task, TestingTask) else 'train'
@@ -556,12 +607,7 @@ async def run_remote_task(task: Union[TrainingTask, TestingTask]):
         pid_path = f"{task_dir}/{file_prefix}.pid"
 
         print(f"[EXEC] Setting up SSH connection for task {task.name}")
-        # Setup SSH connection
-        key = paramiko.RSAKey.from_private_key_file(SSH_KEY)
-        ssh = paramiko.SSHClient()
-        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        ssh.connect(SSH_HOST, username=SSH_USER, pkey=key)
-        sftp = ssh.open_sftp()
+        
 
         # Create remote task directory
         remote_task_dir = os.path.join(base_dir, task.name).replace('\\', '/')
